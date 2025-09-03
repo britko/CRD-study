@@ -324,6 +324,189 @@ wsl
 sudo apt-get install make
 ```
 
+## kubectl 설정 및 최적화
+
+### kubectl 자동완성 설정
+
+#### Linux/macOS
+```bash
+# Bash 자동완성
+echo 'source <(kubectl completion bash)' >> ~/.bashrc
+echo 'alias k=kubectl' >> ~/.bashrc
+echo 'complete -o default -F __start_kubectl k' >> ~/.bashrc
+
+# Zsh 자동완성
+echo 'source <(kubectl completion zsh)' >> ~/.zshrc
+echo 'alias k=kubectl' >> ~/.zshrc
+echo 'compdef _kubectl k' >> ~/.zshrc
+
+# 설정 적용
+source ~/.bashrc  # 또는 source ~/.zshrc
+```
+
+#### Windows
+```cmd
+# PowerShell 자동완성
+kubectl completion powershell | Out-String | Invoke-Expression
+
+# PowerShell 프로필에 추가 (영구 설정)
+kubectl completion powershell >> $PROFILE
+
+# Git Bash 자동완성
+echo 'source <(kubectl completion bash)' >> ~/.bashrc
+echo 'alias k=kubectl' >> ~/.bashrc
+echo 'complete -o default -F __start_kubectl k' >> ~/.bashrc
+```
+
+### 유용한 kubectl alias 설정
+
+#### Linux/macOS
+```bash
+# ~/.bashrc 또는 ~/.zshrc에 추가
+alias k='kubectl'
+alias ka='kubectl apply -f'
+alias kd='kubectl delete'
+alias kg='kubectl get'
+alias kdp='kubectl describe pod'
+alias kdn='kubectl describe node'
+alias kds='kubectl describe service'
+alias kl='kubectl logs'
+alias kex='kubectl exec -it'
+alias kctx='kubectl config use-context'
+alias kgctx='kubectl config get-contexts'
+alias kgns='kubectl get namespaces'
+alias kgp='kubectl get pods'
+alias kgs='kubectl get services'
+alias kgn='kubectl get nodes'
+alias kgcrd='kubectl get crd'
+alias kaf='kubectl apply -f'
+alias kdf='kubectl delete -f'
+alias kpf='kubectl port-forward'
+alias ktop='kubectl top nodes && kubectl top pods'
+```
+
+#### Windows PowerShell
+```powershell
+# PowerShell 프로필에 추가
+Set-Alias -Name k -Value kubectl
+Set-Alias -Name ka -Value 'kubectl apply -f'
+Set-Alias -Name kd -Value 'kubectl delete'
+Set-Alias -Name kg -Value 'kubectl get'
+Set-Alias -Name kdp -Value 'kubectl describe pod'
+Set-Alias -Name kdn -Value 'kubectl describe node'
+Set-Alias -Name kds -Value 'kubectl describe service'
+Set-Alias -Name kl -Value 'kubectl logs'
+Set-Alias -Name kex -Value 'kubectl exec -it'
+Set-Alias -Name kctx -Value 'kubectl config use-context'
+Set-Alias -Name kgctx -Value 'kubectl config get-contexts'
+Set-Alias -Name kgns -Value 'kubectl get namespaces'
+Set-Alias -Name kgp -Value 'kubectl get pods'
+Set-Alias -Name kgs -Value 'kubectl get services'
+Set-Alias -Name kgn -Value 'kubectl get nodes'
+Set-Alias -Name kgcrd -Value 'kubectl get crd'
+Set-Alias -Name kaf -Value 'kubectl apply -f'
+Set-Alias -Name kdf -Value 'kubectl delete -f'
+Set-Alias -Name kpf -Value 'kubectl port-forward'
+Set-Alias -Name ktop -Value 'kubectl top nodes; kubectl top pods'
+```
+
+### kubectl 플러그인 및 도구
+
+#### k9s (터미널 기반 Kubernetes 클러스터 뷰어)
+```bash
+# Linux/macOS
+wget https://github.com/derailed/k9s/releases/latest/download/k9s_Linux_amd64.tar.gz
+tar -xzf k9s_Linux_amd64.tar.gz
+sudo mv k9s /usr/local/bin/
+
+# macOS
+brew install k9s
+
+# Windows
+choco install k9s
+```
+
+#### kubectx & kubens (컨텍스트 및 네임스페이스 전환)
+```bash
+# Linux/macOS
+git clone https://github.com/ahmetb/kubectx.git ~/.kubectx
+echo 'export PATH=$PATH:~/.kubectx' >> ~/.bashrc
+echo 'export PATH=$PATH:~/.kubectx' >> ~/.zshrc
+
+# Windows
+choco install kubectx
+```
+
+### kubectl 설정 파일 최적화
+
+#### ~/.kube/config 최적화
+```bash
+# 현재 컨텍스트 확인
+kubectl config current-context
+
+# 컨텍스트 목록
+kubectl config get-contexts
+
+# 컨텍스트 전환
+kubectl config use-context <context-name>
+
+# 컨텍스트 정보 확인
+kubectl config view
+
+# 특정 컨텍스트 정보만 확인
+kubectl config view --minify
+```
+
+### alias 사용 예제
+
+#### 기본 명령어
+```bash
+# 기존 명령어
+kubectl get pods
+kubectl get services
+kubectl get nodes
+
+# alias 사용
+kgp          # kubectl get pods
+kgs          # kubectl get services
+kgn          # kubectl get nodes
+```
+
+#### 파일 적용
+```bash
+# 기존 명령어
+kubectl apply -f deployment.yaml
+kubectl delete -f deployment.yaml
+
+# alias 사용
+ka deployment.yaml    # kubectl apply -f deployment.yaml
+kd deployment.yaml    # kubectl delete -f deployment.yaml
+```
+
+#### 디버깅 및 모니터링
+```bash
+# 기존 명령어
+kubectl describe pod my-pod
+kubectl logs my-pod
+kubectl exec -it my-pod -- /bin/bash
+
+# alias 사용
+kdp my-pod           # kubectl describe pod my-pod
+kl my-pod            # kubectl logs my-pod
+kex my-pod -- /bin/bash  # kubectl exec -it my-pod -- /bin/bash
+```
+
+#### 컨텍스트 관리
+```bash
+# 기존 명령어
+kubectl config get-contexts
+kubectl config use-context kind-crd-study
+
+# alias 사용
+kgctx                 # kubectl config get-contexts
+kctx kind-crd-study   # kubectl config use-context kind-crd-study
+```
+
 ## 환경 검증
 
 설치가 완료되었는지 확인:
