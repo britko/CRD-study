@@ -1,0 +1,85 @@
+# CRD 학습 프로젝트 .gitignore
+
+# 프로젝트 디렉터리 제외 (사용자가 생성하는 실습용 프로젝트)
+simple-crd/
+advanced-crd-project/
+my-crd-project/
+*-crd-project/
+
+# Go 관련
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+
+# Go 모듈
+go.sum
+
+# IDE 및 에디터
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# 로그 파일
+*.log
+logs/
+
+# 임시 파일
+*.tmp
+*.temp
+temp/
+tmp/
+
+# 환경 변수 파일
+.env
+.env.local
+.env.*.local
+
+# Kubernetes 관련
+*.kubeconfig
+kubeconfig
+.kube/
+
+# Docker 관련
+.dockerignore
+
+# 빌드 결과물
+bin/
+dist/
+build/
+target/
+
+# 테스트 커버리지
+coverage.out
+coverage.html
+
+# 문서 생성 결과물
+docs/_build/
+docs/.doctrees/
+
+# 백업 파일
+*.bak
+*.backup
+*.orig
+
+# 압축 파일
+*.zip
+*.tar.gz
+*.rar
+
+# 로컬 설정 파일
+config/local/
+local.yaml
+local.yml
+
+# 사용자별 설정
+user-config/
+personal/
