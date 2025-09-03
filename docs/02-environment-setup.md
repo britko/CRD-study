@@ -76,6 +76,7 @@ choco install golang
 
 ### 3. kubebuilder 설치
 
+#### Linux or macOS
 ```bash
 # kubebuilder 설치
 curl -L -o kubebuilder https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)
@@ -96,18 +97,172 @@ choco install kubebuilder
 ### 4. 로컬 Kubernetes 클러스터 설정
 
 #### kind (권장)
+
+**kind란?**
+kind (Kubernetes IN Docker)는 Docker 컨테이너를 노드로 사용하여 로컬 Kubernetes 클러스터를 실행하는 도구입니다. 실제 프로덕션 환경과 유사한 다중 노드 클러스터를 로컬에서 쉽게 구성할 수 있습니다.
+
+**장점:**
+- 🚀 **빠른 시작**: Docker만 있으면 즉시 실행 가능
+- 🔧 **다중 노드 지원**: 단일 노드부터 다중 노드 클러스터까지 구성 가능
+- 🧪 **테스트 환경**: 실제 클러스터와 유사한 환경에서 테스트
+- 💾 **경량**: 가상머신보다 가벼우고 빠름
+- 🔄 **재생성 용이**: 클러스터를 쉽게 삭제하고 재생성 가능
+
 ```bash
 # kind 설치
 go install sigs.k8s.io/kind@latest
 
-# 클러스터 생성
-kind create cluster --name crd-study
+# Go bin 디렉토리를 PATH에 추가 (중요!)
+export PATH=$PATH:$(go env GOPATH)/bin
+
+# 설치 확인
+kind version
+
+# 기본 클러스터 생성 (단일 노드)
+kind create cluster
+
+# 사용자 정의 클러스터 생성 (다중 노드)
+kind create cluster --name crd-study --config - <<EOF
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 6443
+    hostPort: 6443
+- role: worker
+- role: worker
+EOF
+
+# 또는 설정 파일 사용
+cat > kind-config.yaml <<EOF
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: crd-study
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 6443
+    hostPort: 6443
+  - containerPort: 80
+    hostPort: 80
+  - containerPort: 443
+    hostPort: 443
+- role: worker
+- role: worker
+networking:
+  apiServerAddress: "127.0.0.1"
+  apiServerPort: 6443
+EOF
+
+kind create cluster --config kind-config.yaml
+
+# 클러스터 목록 확인
+kind get clusters
+
+# 클러스터 정보 확인
+kind cluster-info --name crd-study
 
 # 컨텍스트 설정
 kubectl cluster-info --context kind-crd-study
+
+# 클러스터 삭제
+kind delete cluster --name crd-study
+```
+
+**⚠️ 주의: kind 명령어가 인식되지 않는 경우**
+
+`go install`로 설치한 kind가 명령어로 인식되지 않으면 다음을 확인하세요:
+
+```bash
+# 1. Go bin 디렉토리 확인
+go env GOPATH
+go env GOBIN
+
+# 2. PATH에 Go bin 디렉토리 추가 (일시적)
+export PATH=$PATH:$(go env GOPATH)/bin
+
+# 3. PATH에 Go bin 디렉토리 추가 (영구적)
+echo 'export PATH=$PATH:$(go env GOPATH)/bin' >> ~/.bashrc
+source ~/.bashrc
+
+# 4. kind 재설치 및 확인
+go install sigs.k8s.io/kind@latest
+which kind
+kind version
+```
+
+**대안: 직접 다운로드 설치**
+```bash
+# Linux/macOS
+curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
+chmod +x ./kind
+sudo mv ./kind /usr/local/bin/kind
+
+# Windows
+# https://kind.sigs.k8s.io/dl/latest/kind-windows-amd64 에서 kind.exe 다운로드
+```
+
+**Windows에서 kind 설치 문제 해결**
+
+Windows에서 `go install`로 설치한 kind가 인식되지 않는 경우:
+
+```cmd
+# PowerShell에서
+# 1. Go bin 디렉토리 확인
+go env GOPATH
+go env GOBIN
+
+# 2. PATH에 Go bin 디렉토리 추가 (일시적)
+$env:PATH += ";$(go env GOPATH)\bin"
+
+# 3. kind 재설치 및 확인
+go install sigs.k8s.io/kind@latest
+Get-Command kind
+kind version
+
+# Git Bash에서
+# 1. PATH에 Go bin 디렉토리 추가
+export PATH=$PATH:$(go env GOPATH)/bin
+
+# 2. kind 재설치 및 확인
+go install sigs.k8s.io/kind@latest
+which kind
+kind version
+```
+
+**Windows 권장 설치 방법**
+```cmd
+# Chocolatey 사용 (가장 간단)
+choco install kind
+
+# 또는 WSL2 사용 시 Linux와 동일하게 설치
+wsl
+go install sigs.k8s.io/kind@latest
+export PATH=$PATH:$(go env GOPATH)/bin
 ```
 
 #### minikube (대안)
+
+**minikube란?**
+minikube는 로컬에서 단일 노드 Kubernetes 클러스터를 실행하는 도구입니다. 가상머신이나 Docker를 사용하여 격리된 환경에서 Kubernetes를 실행할 수 있습니다.
+
+**장점:**
+- 🎯 **단순함**: 단일 노드로 간단한 테스트 환경 구성
+- 🔒 **격리**: 가상머신으로 완전히 격리된 환경
+- 📚 **학습**: Kubernetes 기본 개념 학습에 적합
+- 🛠️ **안정성**: 검증된 도구로 안정적인 실행
+
+**kind vs minikube 비교:**
+
+| 기능 | kind | minikube |
+|------|------|----------|
+| **노드 수** | 다중 노드 지원 | 단일 노드만 |
+| **성능** | Docker 기반으로 빠름 | 가상머신 기반으로 상대적으로 느림 |
+| **리소스** | 경량 (Docker 컨테이너) | 상대적으로 무거움 (가상머신) |
+| **복잡성** | 다중 노드 구성 가능 | 단순한 구성 |
+| **사용 사례** | 다중 노드 테스트, CI/CD | 학습, 단순한 테스트 |
+
 ```bash
 # minikube 설치
 curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
@@ -115,6 +270,15 @@ sudo install minikube-linux-amd64 /usr/local/bin/minikube
 
 # 클러스터 시작
 minikube start
+
+# 클러스터 상태 확인
+minikube status
+
+# 클러스터 중지
+minikube stop
+
+# 클러스터 삭제
+minikube delete
 ```
 
 #### Windows
