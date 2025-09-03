@@ -4,6 +4,10 @@
 
 ### 0. Windows 환경 준비 (Windows 사용자)
 
+**권장 버전**: 
+- **Docker**: 24.0+ (최소: 20.10+)
+- **Chocolatey**: 최신 버전
+
 #### Chocolatey 설치 (권장)
 ```cmd
 # PowerShell을 관리자 권한으로 실행 후
@@ -22,6 +26,8 @@ wsl --install
 ```
 
 ### 1. kubectl 설치
+
+**권장 버전**: 1.28+ (최소: 1.24+)
 
 #### macOS (Homebrew)
 ```bash
@@ -46,6 +52,8 @@ choco install kubernetes-cli
 ```
 
 ### 2. Go 설치
+
+**권장 버전**: 1.21+ (최소: 1.19+)
 
 #### macOS (Homebrew)
 ```bash
@@ -76,7 +84,9 @@ choco install golang
 
 ### 3. kubebuilder 설치
 
-#### Linux or macOS
+**권장 버전**: 3.14+ (최소: 3.0+)
+
+#### Linux/macOS
 ```bash
 # kubebuilder 설치
 curl -L -o kubebuilder https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)
@@ -95,6 +105,10 @@ choco install kubebuilder
 ```
 
 ### 4. 로컬 Kubernetes 클러스터 설정
+
+**권장 버전**: 
+- **kind**: 0.20+ (최소: 0.17+)
+- **minikube**: 1.32+ (최소: 1.28+)
 
 #### kind (권장)
 
@@ -299,6 +313,8 @@ minikube start --driver=docker
 ```
 
 ### 5. make 설치
+
+**권장 버전**: 최신 버전 (대부분의 시스템에 기본 포함)
 
 #### macOS
 ```bash
@@ -511,6 +527,21 @@ kctx kind-crd-study   # kubectl config use-context kind-crd-study
 
 설치가 완료되었는지 확인:
 
+### 📋 **권장 버전 정보**
+
+**현재 문서 작성 시점 (2024년 12월) 권장 버전:**
+
+| 도구 | 권장 버전 | 최소 버전 | 설치 확인 명령어 |
+|------|-----------|-----------|------------------|
+| **kubectl** | 1.28+ | 1.24+ | `kubectl version --client` |
+| **Go** | 1.21+ | 1.19+ | `go version` |
+| **kubebuilder** | 3.14+ | 3.0+ | `kubebuilder version` |
+| **kind** | 0.20+ | 0.17+ | `kind version` |
+| **minikube** | 1.32+ | 1.28+ | `minikube version` |
+| **Docker** | 24.0+ | 20.10+ | `docker --version` |
+
+**📝 참고**: Kubernetes는 4개월마다 새로운 버전을 릴리스하므로, 최신 안정 버전 사용을 권장합니다.
+
 ### Linux/macOS
 ```bash
 # 버전 확인
@@ -543,17 +574,22 @@ minikube version
 
 ## 프로젝트 초기화
 
+이제 CRD 개발을 위한 기본 환경이 준비되었습니다. 다음 단계에서는 실제 CRD 프로젝트를 생성하고 개발해보겠습니다.
+
 ```bash
 # 프로젝트 디렉토리 생성
-mkdir my-crd-project
-cd my-crd-project
+mkdir simple-crd
+cd simple-crd
 
 # kubebuilder로 프로젝트 초기화
-kubebuilder init --domain example.com --repo github.com/username/my-crd-project
+kubebuilder init --domain example.com --repo github.com/username/simple-crd
 
-# API 생성
-kubebuilder create api --group mygroup --version v1 --kind MyResource
+# Website API 생성 (03에서 사용할 CRD)
+kubebuilder create api --group mygroup --version v1 --kind Website --resource --controller
 ```
+
+**📝 다음 단계**
+프로젝트가 생성되었습니다! 이제 [첫 번째 CRD 만들기](./03-first-crd.md)에서 이 프로젝트를 사용하여 실제 CRD를 개발하고 배포해보겠습니다.
 
 ## 다음 단계
 

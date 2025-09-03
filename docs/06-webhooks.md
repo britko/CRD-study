@@ -4,6 +4,8 @@
 
 **웹훅(Webhook)**은 Kubernetes API 서버가 특정 작업을 수행하기 전에 외부 서비스에 요청을 보내 검증하거나 리소스를 변환할 수 있게 해주는 기능입니다.
 
+[컨트롤러 개발](./05-controller-development.md)에서 CRD의 비즈니스 로직을 구현했으니, 이제 데이터 검증과 변환을 위한 웹훅을 구현해보겠습니다.
+
 ## 웹훅의 종류
 
 ### 1. Validating Webhook
@@ -493,6 +495,8 @@ func (r *Website) validateURL() *field.Error {
 ```
 
 ## 다음 단계
+
+웹훅 구현을 완료했습니다! 이제 CRD의 데이터 검증과 기본값 설정을 위한 고급 기능들을 구현해보겠습니다:
 
 - [검증 및 기본값 설정](./07-validation-defaulting.md) - 스키마 검증 및 기본값
 - [CRD 버전 관리](./08-versioning.md) - CRD 버전 관리 및 마이그레이션

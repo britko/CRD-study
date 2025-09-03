@@ -4,6 +4,8 @@
 
 **컨트롤러**는 Kubernetes의 핵심 개념으로, 원하는 상태(Desired State)와 실제 상태(Actual State)를 지속적으로 비교하여 클러스터를 원하는 상태로 유지하는 역할을 합니다.
 
+[kubebuilder 사용법](./04-kubebuilder-guide.md)에서 프로젝트 구조와 API 타입을 정의했으니, 이제 실제 비즈니스 로직을 구현하는 컨트롤러를 개발해보겠습니다.
+
 ## 컨트롤러의 동작 원리
 
 ### 1. Reconcile 루프
@@ -417,6 +419,8 @@ func (r *WebsiteReconciler) SetupWithManager(mgr ctrl.Manager) error {
 ```
 
 ## 다음 단계
+
+컨트롤러 개발을 완료했습니다! 이제 CRD의 데이터 무결성을 보장하는 고급 기능들을 구현해보겠습니다:
 
 - [웹훅 구현](./06-webhooks.md) - 검증 및 변환 웹훅 구현
 - [검증 및 기본값 설정](./07-validation-defaulting.md) - 스키마 검증 및 기본값

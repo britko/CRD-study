@@ -2,7 +2,13 @@
 
 ## kubebuilder란?
 
-**kubebuilder**는 Kubernetes CRD와 컨트롤러를 개발하기 위한 Go 프레임워크입니다. 코드 생성, 테스트, 배포를 자동화하여 개발 생산성을 크게 향상시킵니다.
+**kubebuilder**는 Kubernetes CRD와 컨트롤러를 개발하기 위한 Go 프레임워크입니다. [첫 번째 CRD 만들기](./03-first-crd.md)에서 이미 기본적인 사용법을 경험했으며, 이제 kubebuilder의 고급 기능들을 자세히 살펴보겠습니다.
+
+**주요 기능:**
+- **코드 생성**: CRD 스키마, 컨트롤러, 테스트 코드 자동 생성
+- **프로젝트 구조**: 표준화된 프로젝트 구조 제공
+- **테스트 지원**: 단위 테스트 및 통합 테스트 환경 구축
+- **배포 자동화**: CRD 및 컨트롤러 배포 자동화
 
 ## 주요 기능
 
@@ -16,17 +22,19 @@
 ### 1. 프로젝트 초기화
 
 ```bash
-# 새 디렉토리 생성
-mkdir my-crd-project
-cd my-crd-project
+# 새 디렉토리 생성 (03과 다른 이름 사용)
+mkdir advanced-crd-project
+cd advanced-crd-project
 
 # kubebuilder 프로젝트 초기화
 kubebuilder init \
   --domain example.com \
-  --repo github.com/username/my-crd-project \
+  --repo github.com/username/advanced-crd-project \
   --license apache2 \
   --owner "Your Name <your.email@example.com>"
 ```
+
+**📝 참고**: [첫 번째 CRD 만들기](./03-first-crd.md)에서는 `simple-crd` 프로젝트를 사용했지만, 여기서는 더 고급 기능을 위한 `advanced-crd-project`를 생성합니다.
 
 ### 2. API 생성
 
@@ -296,7 +304,9 @@ make run
 
 ## 다음 단계
 
-- [컨트롤러 개발](./05-controller-development.md) - 컨트롤러 구현 상세 가이드
+kubebuilder의 기본 사용법을 학습했습니다. 이제 실제 컨트롤러를 구현해보겠습니다:
+
+- [컨트롤러 개발](./05-controller-development.md) - CRD의 비즈니스 로직을 구현하는 컨트롤러 개발
 - [웹훅 구현](./06-webhooks.md) - 검증 및 변환 웹훅 구현
 
 ## 문제 해결
