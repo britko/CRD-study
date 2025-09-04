@@ -51,7 +51,7 @@ kubebuilder create api \
 ## 프로젝트 구조
 
 ```
-my-crd-project/
+advanced-crd-project/
 ├── api/                    # API 정의
 │   └── v1/
 │       ├── website_types.go    # Website 타입 정의
@@ -62,8 +62,9 @@ my-crd-project/
 │   ├── rbac/             # RBAC 설정
 │   ├── manager/          # 매니저 배포
 │   └── webhook/          # 웹훅 설정
-├── controllers/           # 컨트롤러 구현
-│   └── website_controller.go
+├── internal/              # 내부 패키지
+│   └── controller/       # 컨트롤러 구현
+│       └── website_controller.go
 ├── hack/                  # 유틸리티 스크립트
 ├── main.go               # 메인 함수
 ├── Makefile              # 빌드 및 배포
@@ -201,76 +202,130 @@ func init() {
 
 ### 1. 기본 컨트롤러 구조
 
-`controllers/website_controller.go`에서 비즈니스 로직을 구현합니다:
+`internal/controller/website_controller.go`에서 비즈니스 로직을 구현합니다:
 
 ```go
-package controllers
+package controller
 
 import (
     "context"
-    "fmt"
 
     "k8s.io/apimachinery/pkg/runtime"
     ctrl "sigs.k8s.io/controller-runtime"
     "sigs.k8s.io/controller-runtime/pkg/client"
-    "sigs.k8s.io/controller-runtime/pkg/log"
+    logf "sigs.k8s.io/controller-runtime/pkg/log"
 
-    mygroupv1 "github.com/username/my-crd-project/api/v1"
-    appsv1 "k8s.io/api/apps/v1"
-    corev1 "k8s.io/api/core/v1"
-    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    mygroupv1 "github.com/britko/advanced-crd-project/api/v1"
+    // 추가 import 예시 (구현 시 필요):
+    // appsv1 "k8s.io/api/apps/v1"
+    // corev1 "k8s.io/api/core/v1"
+    // metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// WebsiteReconciler는 Website 리소스를 조정합니다
+// WebsiteReconciler reconciles a Website object
 type WebsiteReconciler struct {
     client.Client
     Scheme *runtime.Scheme
 }
 
-//+kubebuilder:rbac:groups=mygroup.example.com,resources=websites,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=mygroup.example.com,resources=websites/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=mygroup.example.com,resources=websites/finalizers,verbs=update
-//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=mygroup.example.com,resources=websites,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=mygroup.example.com,resources=websites/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=mygroup.example.com,resources=websites/finalizers,verbs=update
 
-// Reconcile은 Website 리소스를 조정합니다
+// Reconcile is part of the main kubernetes reconciliation loop which aims to
+// move the current state of the cluster closer to the desired state.
+// TODO(user): Modify the Reconcile function to compare the state specified by
+// the Website object against the actual cluster state, and then
+// perform operations to make the cluster state reflect the state specified by
+// the user.
+//
+// For more details, check Reconcile and its Result here:
+// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *WebsiteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    logger := log.FromContext(ctx)
+    _ = logf.FromContext(ctx)
 
-    // Website 리소스 조회
+    // TODO(user): your logic here
+    // 아래는 구현 예시입니다:
+    // logger := logf.FromContext(ctx)
+
+    // 1. Website 리소스 조회
     var website mygroupv1.Website
     if err := r.Get(ctx, req.NamespacedName, &website); err != nil {
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
 
-    logger.Info("Website 조정 시작", "name", website.Name, "namespace", website.Namespace)
+    // logger.Info("Website 조정 시작", "name", website.Name, "namespace", website.Namespace)
 
-    // Deployment 생성/업데이트
-    if err := r.reconcileDeployment(ctx, &website); err != nil {
-        return ctrl.Result{}, err
-    }
+    // 2. 원하는 상태와 실제 상태 비교
+    // 예: Deployment가 존재하는지, 올바른 설정인지 확인
 
-    // Service 생성/업데이트
-    if err := r.reconcileService(ctx, &website); err != nil {
-        return ctrl.Result{}, err
-    }
+    // 3. 필요한 작업 수행
+    // 예: Deployment 생성/업데이트, Service 생성/업데이트
 
-    // 상태 업데이트
-    if err := r.updateStatus(ctx, &website); err != nil {
-        return ctrl.Result{}, err
-    }
+    // 4. 상태 업데이트
+    // 예: website.Status.AvailableReplicas 업데이트
 
     return ctrl.Result{}, nil
 }
 
-// SetupWithManager는 컨트롤러를 매니저에 설정합니다
+// SetupWithManager sets up the controller with the Manager.
 func (r *WebsiteReconciler) SetupWithManager(mgr ctrl.Manager) error {
     return ctrl.NewControllerManagedBy(mgr).
         For(&mygroupv1.Website{}).
-        Owns(&appsv1.Deployment{}).
-        Owns(&corev1.Service{}).
+        Named("website").
+        // 추가 옵션 예시:
+        // Owns(&appsv1.Deployment{}).        // Deployment 변경 감지
+        // Owns(&corev1.Service{}).            // Service 변경 감지
+        // Watches(&source.Kind{Type: &corev1.Pod{}}, handler.EnqueueRequestsFromMapFunc(r.findObjectsForPod)). // Pod 변경 감지
         Complete(r)
 }
+```
+
+### 2. 구현 가이드
+
+#### **Reconcile 함수 구현 단계**
+
+1. **리소스 조회**: `r.Get()`으로 Website 리소스 가져오기
+2. **상태 비교**: 원하는 상태와 실제 클러스터 상태 비교
+3. **작업 수행**: 필요한 리소스 생성/업데이트/삭제
+4. **상태 업데이트**: Website의 Status 필드 업데이트
+
+#### **자주 사용하는 패턴**
+
+```go
+// 리소스 존재 여부 확인
+if err := r.Get(ctx, types.NamespacedName{Name: name, Namespace: namespace}, &deployment); err != nil {
+    if errors.IsNotFound(err) {
+        // 리소스가 없음 - 생성 필요
+        return r.createDeployment(ctx, website)
+    }
+    return ctrl.Result{}, err
+}
+
+// 리소스 업데이트
+if err := r.Update(ctx, &deployment); err != nil {
+    return ctrl.Result{}, err
+}
+
+// 상태 업데이트
+website.Status.AvailableReplicas = deployment.Status.AvailableReplicas
+if err := r.Status().Update(ctx, website); err != nil {
+    return ctrl.Result{}, err
+}
+```
+
+#### **에러 처리**
+
+```go
+// 리소스가 없을 때 (정상적인 상황)
+return ctrl.Result{}, client.IgnoreNotFound(err)
+
+// 재시도가 필요한 에러
+return ctrl.Result{Requeue: true}, err
+
+// 일정 시간 후 재시도
+return ctrl.Result{RequeueAfter: time.Minute}, nil
+```
 ```
 
 ## 빌드 및 배포
