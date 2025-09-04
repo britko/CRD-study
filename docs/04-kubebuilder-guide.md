@@ -508,57 +508,36 @@ kubectl delete -f config/samples/mygroup_v1_website.yaml
 - `image: "nginx:alpine"` (기본값)
 - `port: 80` (기본값)
 
-### 2. 다른 값으로 리소스 테스트
+### 2. 추가 테스트 및 확인
 
-다른 설정값으로 리소스를 생성하여 다양한 시나리오를 테스트해보겠습니다:
+기본 샘플 리소스 배포 후 추가적인 테스트를 진행해보겠습니다:
 
 ```bash
-# 1. 다른 설정값을 가진 리소스 생성
+# 리소스 수정 테스트
+kubectl patch website website-sample --type='merge' -p='{"spec":{"replicas":5}}'
+kubectl get website website-sample -o jsonpath='{.spec.replicas}'
+
+# 다른 설정값으로 새 리소스 생성
 cat > /tmp/test-website.yaml << EOF
 apiVersion: mygroup.example.com/v1
 kind: Website
 metadata:
   name: test-website
-  namespace: default
 spec:
   url: "https://test.example.com"
-  replicas: 5
+  replicas: 2
   image: "httpd:alpine"
   port: 8080
 EOF
 
-# 2. 수정된 리소스 배포
 kubectl apply -f /tmp/test-website.yaml
-
-# 3. 리소스 상태 확인
 kubectl get websites
-kubectl describe website test-website
-
-# 4. 컨트롤러 로그 확인
-kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-controller-manager | tail -20
-
-# 5. 리소스 수정 테스트
-kubectl patch website test-website --type='merge' -p='{"spec":{"replicas":5}}'
-kubectl get website test-website -o jsonpath='{.spec.replicas}'
-
-# 6. 정리
 kubectl delete -f /tmp/test-website.yaml
 rm /tmp/test-website.yaml
-```
 
-### 3. 리소스 상태 확인 명령어
-
-```bash
-# CRD 상태 확인
-kubectl get crd websites.mygroup.example.com -o yaml
-
-# 컨트롤러 Pod 상태 확인
+# 시스템 상태 종합 확인
+kubectl get crd websites.mygroup.example.com
 kubectl get pods -n advanced-crd-project-system
-
-# 이벤트 확인
-kubectl get events -n advanced-crd-project-system --sort-by=.lastTimestamp
-
-# API 리소스 확인
 kubectl api-resources | grep mygroup
 ```
 
