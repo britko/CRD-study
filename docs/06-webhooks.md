@@ -8,6 +8,73 @@
 
 [컨트롤러 개발](./05-controller-development.md)에서 CRD의 비즈니스 로직을 구현했으니, 이제 데이터 검증과 변환을 위한 웹훅을 구현해보겠습니다.
 
+## 웹훅과 Admission Controller의 관계
+
+### Admission Controller란?
+- **Kubernetes의 내장 메커니즘**으로, API 서버가 요청을 처리하기 **전후**에 실행되는 **플러그인 시스템**
+- **두 가지 타입**:
+  - **Mutating Admission Controller**: 요청을 **수정** (변경)
+  - **Validating Admission Controller**: 요청을 **검증** (승인/거부)
+
+### 웹훅이란?
+- **Admission Controller의 한 종류**
+- **외부 서비스**로 HTTP 요청을 보내서 admission 결정을 받는 방식
+- **Dynamic Admission Control**의 핵심 구성요소
+
+### 구체적인 관계
+
+```
+Kubernetes API Server
+├── Built-in Admission Controllers (내장)
+│   ├── ResourceQuota
+│   ├── LimitRanger  
+│   ├── ServiceAccount
+│   └── ...
+└── Webhook Admission Controllers (외부)
+    ├── ValidatingWebhookConfiguration
+    └── MutatingWebhookConfiguration
+```
+
+### 내장 vs 웹훅 비교
+
+| 구분 | 내장 Admission Controller | 웹훅 Admission Controller |
+|------|---------------------------|---------------------------|
+| **위치** | API 서버 내부 | 외부 서비스 |
+| **언어** | Go (컴파일된 바이너리) | 어떤 언어든 가능 |
+| **수정** | Kubernetes 소스 수정 필요 | 독립적으로 개발/배포 |
+| **로직** | 정적, 미리 정의됨 | 동적, 커스텀 로직 |
+| **예시** | ResourceQuota, LimitRanger | CRD 웹훅, 보안 정책 웹훅 |
+
+### 요청 처리 순서
+
+```
+1. Authentication (인증)
+2. Authorization (인가)  
+3. Mutating Admission Controllers
+   ├── 내장 Mutating Controllers
+   └── Mutating Webhooks ← 우리가 만든 것
+4. Validating Admission Controllers
+   ├── 내장 Validating Controllers  
+   └── Validating Webhooks ← 우리가 만든 것
+5. API Object 저장
+```
+
+### 웹훅의 장점
+
+1. **확장성**: Kubernetes 재컴파일 없이 새로운 로직 추가
+2. **유연성**: 어떤 언어로든 구현 가능
+3. **독립성**: 별도 서비스로 관리
+4. **재사용성**: 다른 클러스터에서도 사용 가능
+
+### 사용 사례
+
+- **CRD 검증**: 우리가 만든 Website CRD의 유효성 검사
+- **보안 정책**: 특정 이미지나 네임스페이스 제한
+- **비용 관리**: 리소스 할당량 검증
+- **컴플라이언스**: 회사 정책 준수 검증
+
+**요약**: **웹훅 = Admission Controller의 한 종류**로, 외부 서비스로 구현된 admission controller입니다.
+
 ## 웹훅의 종류
 
 ### 1. Validating Webhook
