@@ -586,10 +586,35 @@ kubebuilder init --domain example.com --repo github.com/username/simple-crd
 
 # Website API 생성 (03에서 사용할 CRD)
 kubebuilder create api --group mygroup --version v1 --kind Website --resource --controller
+
+# 생성된 프로젝트 구조 확인
+ls -la
+tree .  # 또는 ls -R (tree 명령어가 없는 경우)
 ```
 
 **📝 다음 단계**
 프로젝트가 생성되었습니다! 이제 [첫 번째 CRD 만들기](./03-first-crd.md)에서 이 프로젝트를 사용하여 실제 CRD를 개발하고 배포해보겠습니다.
+
+**📁 생성된 프로젝트 구조:**
+```
+simple-crd/
+├── api/                    # API 타입 정의
+│   └── v1/
+│       ├── website_types.go    # Website 타입
+│       ├── website_webhook.go  # 웹훅 (선택사항)
+│       └── groupversion_info.go
+├── config/                 # 배포 설정
+│   ├── crd/              # CRD 매니페스트
+│   ├── rbac/             # RBAC 설정
+│   ├── manager/          # 매니저 배포
+│   └── webhook/          # 웹훅 설정 (선택사항)
+├── controllers/           # 컨트롤러 구현
+│   └── website_controller.go
+├── hack/                  # 유틸리티 스크립트
+├── main.go               # 메인 함수
+├── Makefile              # 빌드 및 배포
+└── go.mod                # Go 모듈
+```
 
 ## 다음 단계
 
