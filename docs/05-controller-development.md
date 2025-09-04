@@ -4,7 +4,9 @@
 
 **컨트롤러**는 Kubernetes의 핵심 개념으로, 원하는 상태(Desired State)와 실제 상태(Actual State)를 지속적으로 비교하여 클러스터를 원하는 상태로 유지하는 역할을 합니다.
 
-[kubebuilder 사용법](./04-kubebuilder-guide.md)에서 프로젝트 구조와 API 타입을 정의했으니, 이제 실제 비즈니스 로직을 구현하는 컨트롤러를 개발해보겠습니다.
+[kubebuilder 사용법](./04-kubebuilder-guide.md)에서 `advanced-crd-project` 프로젝트 구조와 API 타입을 정의했으니, 이제 실제 비즈니스 로직을 구현하는 컨트롤러를 개발해보겠습니다.
+
+**📝 참고**: 이 문서는 `docs/04-kubebuilder-guide.md`에서 생성한 `advanced-crd-project`를 계속 사용합니다.
 
 ## 컨트롤러의 동작 원리
 
@@ -437,10 +439,10 @@ func (r *WebsiteReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 ```bash
 # 컨트롤러 로그 확인
-kubectl logs -n my-crd-project-system deployment/my-crd-project-controller-manager -f
+kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-controller-manager -f
 
 # 특정 리소스 이벤트 확인
-kubectl describe website my-website
+kubectl describe website website-sample
 
 # API 서버 로그 확인
 kubectl logs -n kube-system kube-apiserver-kind-control-plane
