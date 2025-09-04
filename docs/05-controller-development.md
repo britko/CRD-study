@@ -10,6 +10,17 @@
 
 ## 컨트롤러의 동작 원리
 
+### Reconcile이란?
+
+**Reconcile**은 Kubernetes 컨트롤러의 핵심 개념으로, "조정" 또는 "화해"라는 의미입니다. 컨트롤러는 지속적으로 다음을 수행합니다:
+
+1. **원하는 상태(Desired State) 확인**: 사용자가 정의한 리소스의 스펙
+2. **실제 상태(Actual State) 확인**: 클러스터에 실제로 존재하는 리소스의 상태
+3. **차이점 분석**: 원하는 상태와 실제 상태 간의 차이점 파악
+4. **조정 작업 수행**: 실제 상태를 원하는 상태로 맞추기 위한 작업 실행
+
+이 과정을 **Reconcile 루프**라고 하며, 리소스가 원하는 상태에 도달할 때까지 반복됩니다.
+
 ### 1. Reconcile 루프
 
 ```mermaid
@@ -37,19 +48,36 @@ flowchart LR
 ### 2. 기본 구조
 
 ```go
+import (
+    "context"
+    
+    "k8s.io/apimachinery/pkg/runtime"
+    ctrl "sigs.k8s.io/controller-runtime"
+    "sigs.k8s.io/controller-runtime/pkg/client"
+    logf "sigs.k8s.io/controller-runtime/pkg/log"
+    
+    mygroupv1 "github.com/britko/advanced-crd-project/api/v1"
+)
+
 type WebsiteReconciler struct {
     client.Client        // Kubernetes API 클라이언트
     Scheme *runtime.Scheme // 타입 스키마
-    Log    logr.Logger   // 로거
 }
 
 func (r *WebsiteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    _ = logf.FromContext(ctx)  // 로거는 context에서 가져옴
+    
     // 1. 리소스 조회
     // 2. 비즈니스 로직 실행
     // 3. 상태 업데이트
     // 4. 결과 반환
 }
 ```
+
+**📝 참고**: 
+- **로거 사용**: `logr.Logger` 필드 대신 `logf.FromContext(ctx)`로 context에서 로거를 가져옴
+- **Import**: `logf "sigs.k8s.io/controller-runtime/pkg/log"` 패키지 사용
+- **실제 구조**: kubebuilder가 생성한 실제 컨트롤러 구조와 일치
 
 ## 컨트롤러 구현 단계
 
