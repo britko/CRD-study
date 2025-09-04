@@ -652,6 +652,36 @@ go test ./internal/controller/ -v
 
 ### 2. 통합 테스트 (E2E 테스트)
 
+#### **E2E 테스트 코드 구조**
+
+E2E 테스트는 별도의 테스트 파일 `test/e2e/e2e_test.go`를 사용합니다:
+
+**파일 위치**: `test/e2e/e2e_test.go`
+
+**테스트 프로세스**:
+1. **BeforeAll**: 테스트 환경 준비
+   - 네임스페이스 생성 (`advanced-crd-project-system`)
+   - CRD 설치 (`make install`)
+   - 컨트롤러 배포 (`make deploy`)
+
+2. **테스트 실행**:
+   - 컨트롤러 Pod 정상 실행 확인
+   - 메트릭 엔드포인트 동작 확인
+
+3. **AfterAll**: 테스트 환경 정리
+   - 컨트롤러 제거 (`make undeploy`)
+   - CRD 제거 (`make uninstall`)
+   - 네임스페이스 삭제
+
+#### **E2E 테스트 특징**
+
+- **실제 클러스터**: Kind 클러스터에서 실제 배포 테스트
+- **전체 워크플로우**: CRD 설치 → 컨트롤러 배포 → 기능 테스트 → 정리
+- **시스템 검증**: 컨트롤러 Pod 상태, 메트릭 엔드포인트, RBAC 등 전체 시스템 검증
+- **자동 정리**: 테스트 후 모든 리소스 자동 삭제
+
+#### **E2E 테스트 실행**
+
 ```bash
 # 1. 현재 kubectl context 백업
 kubectl config current-context > /tmp/original-context.txt
@@ -669,11 +699,15 @@ make cleanup-test-e2e
 kubectl config use-context $(cat /tmp/original-context.txt)
 ```
 
-#### **E2E 테스트 설명**
+#### **E2E 테스트 vs 단위 테스트**
 
-- **setup-test-e2e**: Kind 클러스터를 생성하여 E2E 테스트 환경을 준비
-- **test-e2e**: 실제 Kubernetes 클러스터에서 통합 테스트 실행
-- **cleanup-test-e2e**: 테스트용 Kind 클러스터 삭제
+| 구분 | 단위 테스트 (`make test`) | E2E 테스트 (`make test-e2e`) |
+|------|-------------------------|---------------------------|
+| **테스트 파일** | `internal/controller/website_controller_test.go` | `test/e2e/e2e_test.go` |
+| **환경** | envtest (가상 API 서버) | 실제 Kind 클러스터 |
+| **속도** | 빠름 | 느림 |
+| **범위** | 컨트롤러 로직만 | 전체 시스템 통합 |
+| **용도** | 개발 중 빠른 피드백 | 배포 전 최종 검증 |
 
 #### **⚠️ 중요: kubectl context 관리**
 
@@ -706,71 +740,6 @@ kubectl config use-context kind-crd-study
 # 방법 3: 사용 가능한 context 목록 확인
 kubectl config get-contexts
 ```
-
-#### **E2E 테스트 vs 단위 테스트**
-
-| 구분 | 단위 테스트 (`make test`) | E2E 테스트 (`make test-e2e`) |
-|------|-------------------------|---------------------------|
-| **테스트 파일** | `internal/controller/website_controller_test.go` | `test/e2e/e2e_test.go` |
-| **환경** | envtest (가상 API 서버) | 실제 Kind 클러스터 |
-| **속도** | 빠름 | 느림 |
-| **범위** | 컨트롤러 로직만 | 전체 시스템 통합 |
-| **용도** | 개발 중 빠른 피드백 | 배포 전 최종 검증 |
-
-#### **E2E 테스트 코드 구조**
-
-E2E 테스트는 별도의 테스트 파일 `test/e2e/e2e_test.go`를 사용합니다:
-
-```go
-//go:build e2e
-// +build e2e
-
-package e2e
-
-import (
-    . "github.com/onsi/ginkgo/v2"
-    . "github.com/onsi/gomega"
-    "github.com/britko/advanced-crd-project/test/utils"
-)
-
-var _ = Describe("Manager", Ordered, func() {
-    BeforeAll(func() {
-        By("creating manager namespace")
-        // kubectl create ns advanced-crd-project-system
-        
-        By("installing CRDs")
-        // make install
-        
-        By("deploying the controller-manager")
-        // make deploy
-    })
-
-    AfterAll(func() {
-        By("undeploying the controller-manager")
-        // make undeploy
-        
-        By("uninstalling CRDs")
-        // make uninstall
-    })
-
-    Context("Manager", func() {
-        It("should run successfully", func() {
-            // 컨트롤러 Pod가 정상 실행되는지 확인
-        })
-
-        It("should ensure the metrics endpoint is serving metrics", func() {
-            // 메트릭 엔드포인트가 정상 작동하는지 확인
-        })
-    })
-})
-```
-
-#### **E2E 테스트 특징**
-
-- **실제 클러스터**: Kind 클러스터에서 실제 배포 테스트
-- **전체 워크플로우**: CRD 설치 → 컨트롤러 배포 → 기능 테스트 → 정리
-- **시스템 검증**: 컨트롤러 Pod 상태, 메트릭 엔드포인트, RBAC 등 전체 시스템 검증
-- **자동 정리**: 테스트 후 모든 리소스 자동 삭제
 
 ## 문제 해결 및 디버깅
 
