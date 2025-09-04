@@ -118,6 +118,7 @@ type WebsiteStatus struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+kubebuilder:resource:shortName=ws
 //+kubebuilder:printcolumn:name="URL",type="string",JSONPath=".spec.url"
 //+kubebuilder:printcolumn:name="Replicas",type="integer",JSONPath=".spec.replicas"
 //+kubebuilder:printcolumn:name="Available",type="integer",JSONPath=".status.availableReplicas"
@@ -131,6 +132,28 @@ type Website struct {
     Spec   WebsiteSpec   `json:"spec,omitempty"`
     Status WebsiteStatus `json:"status,omitempty"`
 }
+```
+
+### 2. kubebuilder 마커 설명
+
+#### **shortName 마커**
+```go
+//+kubebuilder:resource:shortName=ws
+```
+- **역할**: `kubectl`에서 사용할 수 있는 짧은 이름 제공
+- **사용법**: `kubectl get ws` (전체 이름 `websites` 대신)
+- **장점**: 빠른 타이핑, 자동완성 지원
+
+#### **printcolumn 마커**
+```go
+//+kubebuilder:printcolumn:name="URL",type="string",JSONPath=".spec.url"
+//+kubebuilder:printcolumn:name="Replicas",type="integer",JSONPath=".spec.replicas"
+//+kubebuilder:printcolumn:name="Available",type="integer",JSONPath=".status.availableReplicas"
+//+kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+```
+- **역할**: `kubectl get` 명령어에서 표시할 컬럼 정의
+- **JSONPath**: 리소스의 어떤 필드를 표시할지 지정
+- **사용자 경험**: 중요한 정보를 한눈에 확인 가능
 
 //+kubebuilder:object:root=true
 
@@ -140,6 +163,27 @@ type WebsiteList struct {
     metav1.ListMeta `json:"metadata,omitempty"`
     Items           []Website `json:"items"`
 }
+```
+
+### 3. shortName 사용 예시
+
+shortName을 추가한 후 `make manifests`를 실행하면 다음과 같이 사용할 수 있습니다:
+
+```bash
+# 전체 이름 사용
+kubectl get websites
+kubectl get website my-website
+
+# shortName 사용 (더 간단)
+kubectl get ws
+kubectl get ws my-website
+
+# 컬럼 표시 확인
+kubectl get websites -o wide
+kubectl get ws -o wide
+```
+
+**📝 참고**: shortName은 사용자 편의를 위한 것이므로, 전체 이름과 함께 사용할 수 있습니다.
 
 func init() {
     SchemeBuilder.Register(&Website{}, &WebsiteList{})
