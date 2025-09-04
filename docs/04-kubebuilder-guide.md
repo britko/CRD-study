@@ -137,6 +137,23 @@ type Website struct {
 
 ### 2. kubebuilder 마커 설명
 
+#### **object:root 마커**
+```go
+//+kubebuilder:object:root=true
+```
+- **역할**: 이 구조체가 Kubernetes API의 루트 오브젝트임을 표시
+- **필수성**: CRD의 메인 리소스 타입에 반드시 필요
+- **효과**: `make generate` 실행 시 Deep Copy 함수와 Scheme 등록 코드 생성
+- **사용법**: `Website` 구조체 위에 배치
+
+#### **subresource:status 마커**
+```go
+//+kubebuilder:subresource:status
+```
+- **역할**: Status 서브리소스를 활성화하여 상태 정보를 별도로 관리
+- **효과**: `kubectl get`과 `kubectl describe`에서 Status 정보 표시
+- **사용법**: Status 필드가 있는 구조체에 적용
+
 #### **shortName 마커**
 ```go
 //+kubebuilder:resource:shortName=ws
@@ -155,8 +172,6 @@ type Website struct {
 - **역할**: `kubectl get` 명령어에서 표시할 컬럼 정의
 - **JSONPath**: 리소스의 어떤 필드를 표시할지 지정
 - **사용자 경험**: 중요한 정보를 한눈에 확인 가능
-
-//+kubebuilder:object:root=true
 
 // WebsiteList는 Website 리소스들의 컬렉션을 포함합니다
 type WebsiteList struct {
@@ -426,9 +441,9 @@ make docker-build
 # 3. kind 클러스터에 이미지 로드 (kind 사용 시)
 kind load docker-image controller:latest --name crd-study
 
-# 4. imagePullPolicy 수정 (중요!)
+# 4. imagePullPolicy 추가 (중요!)
 vi config/manager/manager.yaml
-# imagePullPolicy: Always를 imagePullPolicy: IfNotPresent로 변경
+# imagePullPolicy: IfNotPresent 추가
 
 # 5. 컨트롤러 배포
 make deploy
@@ -445,30 +460,49 @@ make deploy
 
 ### 1. 기본 샘플 리소스 배포
 
-kubebuilder가 생성한 샘플 리소스는 이미 CRD 검증 규칙에 맞는 완전한 스펙을 가지고 있습니다:
+kubebuilder가 생성한 기본 샘플 리소스는 빈 스펙으로 되어 있습니다. CRD 검증 규칙에 맞게 수정해야 합니다:
 
 ```bash
-# 1. 샘플 리소스 배포 (완전한 스펙 포함)
+# 1. 샘플 리소스 확인 (빈 스펙 상태)
+cat config/samples/mygroup_v1_website.yaml
+
+# 2. 샘플 리소스에 스펙 추가
+cat > config/samples/mygroup_v1_website.yaml << EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  labels:
+    app.kubernetes.io/name: advanced-crd-project
+    app.kubernetes.io/managed-by: kustomize
+  name: website-sample
+spec:
+  url: "https://example.com"
+  replicas: 3
+  image: "nginx:alpine"
+  port: 80
+EOF
+
+# 3. 수정된 샘플 리소스 배포
 kubectl apply -f config/samples/mygroup_v1_website.yaml
 
-# 2. 리소스 상태 확인
+# 4. 리소스 상태 확인
 kubectl get websites
 kubectl get website website-sample -o yaml
 
-# 3. 리소스 상세 정보 확인
+# 5. 리소스 상세 정보 확인
 kubectl describe website website-sample
 
-# 4. 컨트롤러 로그에서 조정 과정 확인
+# 6. 컨트롤러 로그에서 조정 과정 확인
 kubectl logs -f -n advanced-crd-project-system deployment/advanced-crd-project-controller-manager
 
-# 5. 리소스 이벤트 확인
+# 7. 리소스 이벤트 확인
 kubectl get events --field-selector involvedObject.name=website-sample
 
-# 6. 테스트 완료 후 리소스 정리
+# 8. 테스트 완료 후 리소스 정리
 kubectl delete -f config/samples/mygroup_v1_website.yaml
 ```
 
-**📝 참고**: 샘플 리소스에는 다음 스펙이 포함되어 있습니다:
+**📝 참고**: 기본 샘플 리소스는 빈 스펙이므로 CRD 검증 규칙에 맞게 다음 스펙을 추가해야 합니다:
 - `url: "https://example.com"` (필수 필드)
 - `replicas: 3` (기본값)
 - `image: "nginx:alpine"` (기본값)
