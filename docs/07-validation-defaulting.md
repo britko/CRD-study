@@ -1,5 +1,7 @@
 # 검증 및 기본값 설정
 
+📝 **참고**: 이 문서는 [웹훅 구현](./06-webhooks.md)에서 사용한 `advanced-crd-project`를 계속 사용합니다.
+
 ## 검증과 기본값이란?
 
 **검증(Validation)**과 **기본값(Defaulting)**은 CRD의 데이터 무결성을 보장하고 사용자 경험을 향상시키는 중요한 기능입니다.
@@ -810,6 +812,194 @@ func TestWebsite_Default(t *testing.T) {
     }
 }
 ```
+
+## 실습: OpenAPI 스키마 검증 및 기본값 설정
+
+### 1단계: 기존 Website CRD에 스키마 검증 추가
+
+`api/v1/website_types.go` 파일을 수정하여 kubebuilder 마커로 검증 규칙을 추가합니다:
+
+```go
+// api/v1/website_types.go
+package v1
+
+import (
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// WebsiteSpec defines the desired state of Website
+type WebsiteSpec struct {
+    // URL은 웹사이트의 URL입니다
+    // +kubebuilder:validation:Required
+    // +kubebuilder:validation:Pattern=`^https?://`
+    // +kubebuilder:validation:MinLength=10
+    // +kubebuilder:validation:MaxLength=2048
+    // +kubebuilder:example="https://example.com"
+    URL string `json:"url"`
+
+    // Replicas는 배포할 복제본 수입니다
+    // +kubebuilder:validation:Minimum=1
+    // +kubebuilder:validation:Maximum=10
+    // +kubebuilder:default=3
+    Replicas int `json:"replicas,omitempty"`
+
+    // Image는 사용할 Docker 이미지입니다
+    // +kubebuilder:validation:Required
+    // +kubebuilder:validation:Pattern=`^[a-zA-Z0-9][a-zA-Z0-9_.-]*:[a-zA-Z0-9_.-]+$`
+    // +kubebuilder:default="nginx:latest"
+    Image string `json:"image,omitempty"`
+
+    // Port는 컨테이너 포트입니다
+    // +kubebuilder:validation:Minimum=1
+    // +kubebuilder:validation:Maximum=65535
+    // +kubebuilder:default=80
+    Port int `json:"port,omitempty"`
+
+    // Environment는 배포 환경입니다
+    // +kubebuilder:validation:Enum=development;staging;production
+    // +kubebuilder:default="development"
+    Environment string `json:"environment,omitempty"`
+}
+```
+
+### 2단계: 매니페스트 생성 및 배포
+
+```bash
+# advanced-crd-project 디렉터리로 이동
+cd advanced-crd-project
+
+# 매니페스트 생성
+make manifests
+
+# CRD 업데이트
+make install
+
+# 컨트롤러 재배포
+make deploy
+```
+
+### 3단계: 스키마 검증 테스트
+
+#### 정상적인 Website 생성
+```bash
+# 정상적인 Website 생성
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: schema-test-website
+spec:
+  url: "https://example.com"
+  replicas: 3
+  image: "nginx:latest"
+  port: 80
+  environment: "production"
+EOF
+```
+
+#### 잘못된 URL 패턴 테스트
+```bash
+# 잘못된 URL 패턴으로 Website 생성 시도
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: invalid-url-website
+spec:
+  url: "invalid-url"
+  replicas: 3
+  image: "nginx:latest"
+  port: 80
+EOF
+```
+
+예상 결과: `spec.url in body should match '^https?://'`
+
+#### 잘못된 Replicas 범위 테스트
+```bash
+# 잘못된 Replicas 범위로 Website 생성 시도
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: invalid-replicas-website
+spec:
+  url: "https://example.com"
+  replicas: 15
+  image: "nginx:latest"
+  port: 80
+EOF
+```
+
+예상 결과: `spec.replicas in body should be less than or equal to 10`
+
+#### 잘못된 Environment 값 테스트
+```bash
+# 잘못된 Environment 값으로 Website 생성 시도
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: invalid-env-website
+spec:
+  url: "https://example.com"
+  replicas: 3
+  image: "nginx:latest"
+  port: 80
+  environment: "invalid-env"
+EOF
+```
+
+예상 결과: `spec.environment in body should be one of [development staging production]`
+
+### 4단계: 기본값 설정 테스트
+
+```bash
+# 최소한의 스펙으로 Website 생성
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: default-values-website
+spec:
+  url: "https://example.com"
+EOF
+
+# 생성된 Website 확인
+kubectl get website default-values-website -o yaml
+```
+
+예상 결과:
+- `replicas: 3` (기본값)
+- `image: "nginx:latest"` (기본값)
+- `port: 80` (기본값)
+- `environment: "development"` (기본값)
+
+### 5단계: CRD 스키마 확인
+
+```bash
+# 생성된 CRD의 OpenAPI 스키마 확인
+kubectl get crd websites.mygroup.example.com -o yaml | grep -A 50 "openAPIV3Schema"
+```
+
+### 6단계: 검증과 웹훅의 차이점 확인
+
+```bash
+# 스키마 검증과 웹훅 검증이 모두 동작하는지 확인
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: combined-validation-website
+spec:
+  url: "https://example.com"
+  replicas: 3
+  image: "nginx:latest"
+  port: 22  # 웹훅에서 금지된 포트
+EOF
+```
+
+예상 결과: 웹훅에서 거부됨 (스키마 검증은 통과하지만 웹훅 검증에서 실패)
 
 ## 다음 단계
 

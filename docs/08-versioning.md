@@ -1,10 +1,12 @@
 # CRD 버전 관리
 
+📝 **참고**: 이 문서는 **이론적 가이드**로, 복잡한 구현보다는 CRD 버전 관리의 개념과 전략을 이해하는 데 중점을 둡니다.
+
 ## CRD 버전 관리란?
 
 **CRD 버전 관리**는 Kubernetes API의 핵심 개념으로, API 스키마의 변경사항을 관리하고 하위 호환성을 보장하는 방법입니다.
 
-[검증 및 기본값 설정](./07-validation-defaulting.md)에서 CRD의 데이터 무결성을 보장했으니, 이제 CRD의 장기적인 발전과 관리가 가능한 버전 관리 시스템을 구현해보겠습니다.
+[검증 및 기본값 설정](./07-validation-defaulting.md)에서 CRD의 데이터 무결성을 보장했으니, 이제 CRD의 장기적인 발전과 관리가 가능한 버전 관리 시스템을 이해해보겠습니다.
 
 ## 버전 관리의 중요성
 
@@ -811,3 +813,42 @@ kubectl logs -n my-crd-project-system deployment/webhook-server
 # API 리소스 버전 확인
 kubectl api-resources | grep website
 ```
+
+## 실제 구현 시 고려사항
+
+### 1. 복잡성 관리
+- **다중 버전 CRD**는 실제 구현이 매우 복잡함
+- **Conversion Webhook** 설정이 까다로움
+- **환경별 설정**이 필요함
+
+### 2. 실용적 접근
+- **대부분의 CRD**는 단일 버전으로 충분
+- **필요시에만** 다중 버전 고려
+- **점진적 마이그레이션** 전략 수립
+
+### 3. 대안 방법
+```bash
+# 단일 버전 CRD로 시작
+kubebuilder create api --group mygroup --version v1 --kind Website
+
+# 필요시 새 버전 추가
+kubebuilder create api --group mygroup --version v2 --kind Website
+```
+
+## 참고 자료
+
+### 공식 문서
+- [Kubernetes API Versioning](https://kubernetes.io/docs/reference/using-api/api-concepts/#api-versioning)
+- [CRD Versioning](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definition-versioning/)
+- [Conversion Webhook](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definition-versioning/#webhook-conversion)
+
+### 베스트 프랙티스
+1. **단일 버전으로 시작**: 복잡성 최소화
+2. **명확한 버전 전략**: v1alpha1 → v1beta1 → v1
+3. **하위 호환성 보장**: 기존 클라이언트 지원
+4. **점진적 마이그레이션**: 단계별 전환
+
+### 주의사항
+- **Conversion Webhook**은 프로덕션 환경에서 신중하게 사용
+- **버전 간 호환성**을 철저히 테스트
+- **롤백 계획**을 미리 수립

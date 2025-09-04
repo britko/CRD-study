@@ -1,5 +1,7 @@
 # 웹훅 구현
 
+📝 **참고**: 이 문서는 [컨트롤러 개발](./05-controller-development.md)에서 사용한 `advanced-crd-project`를 계속 사용합니다.
+
 ## 웹훅이란?
 
 **웹훅(Webhook)**은 Kubernetes API 서버가 특정 작업을 수행하기 전에 외부 서비스에 요청을 보내 검증하거나 리소스를 변환할 수 있게 해주는 기능입니다.
@@ -22,9 +24,12 @@
 
 ### 1단계: 웹훅 활성화
 
-kubebuilder에서 웹훅을 활성화하려면:
+기존 `advanced-crd-project`에 웹훅을 추가합니다:
 
 ```bash
+# advanced-crd-project 디렉터리로 이동
+cd advanced-crd-project
+
 # 웹훅 활성화
 kubebuilder create webhook \
   --group mygroup \
@@ -34,18 +39,26 @@ kubebuilder create webhook \
   --programmatic-validation
 ```
 
+이 명령어는 다음 파일들을 생성합니다:
+- `api/v1/website_webhook.go` - 웹훅 구현 파일
+- `config/webhook/` - 웹훅 매니페스트 파일들
+
 ### 2단계: Validating Webhook 구현
 
-#### 기본 구조
+생성된 `api/v1/website_webhook.go` 파일을 수정하여 검증 로직을 구현합니다:
 
 ```go
 // api/v1/website_webhook.go
 package v1
 
 import (
+    "fmt"
+    "net/url"
+    "regexp"
+    "strings"
+    
     "k8s.io/apimachinery/pkg/runtime"
     "k8s.io/apimachinery/pkg/runtime/schema"
-    "k8s.io/apimachinery/pkg/util/validation"
     "k8s.io/apimachinery/pkg/util/validation/field"
     "sigs.k8s.io/controller-runtime/pkg/webhook"
 )
@@ -88,8 +101,8 @@ func (r *Website) validateWebsite() error {
         allErrs = append(allErrs, err)
     }
     
-    // 비즈니스 규칙 검증
-    if err := r.validateBusinessRules(); err != nil {
+    // Image 검증
+    if err := r.validateImage(); err != nil {
         allErrs = append(allErrs, err)
     }
     
@@ -142,6 +155,27 @@ func (r *Website) validatePort() *field.Error {
     // 특정 포트 제한
     if r.Spec.Port == 22 || r.Spec.Port == 3306 {
         return field.Invalid(field.NewPath("spec", "port"), r.Spec.Port, "포트 22와 3306는 사용할 수 없습니다")
+    }
+    
+    return nil
+}
+
+func (r *Website) validateImage() *field.Error {
+    if r.Spec.Image == "" {
+        return field.Required(field.NewPath("spec", "image"), "이미지는 필수입니다")
+    }
+    
+    // Docker 이미지 형식 검증 (간단한 검증)
+    if !strings.Contains(r.Spec.Image, ":") {
+        return field.Invalid(field.NewPath("spec", "image"), r.Spec.Image, "이미지는 태그를 포함해야 합니다 (예: nginx:latest)")
+    }
+    
+    // 허용되지 않는 이미지 검증
+    forbiddenImages := []string{"alpine:latest", "busybox:latest"}
+    for _, forbidden := range forbiddenImages {
+        if r.Spec.Image == forbidden {
+            return field.Invalid(field.NewPath("spec", "image"), r.Spec.Image, "이 이미지는 사용할 수 없습니다")
+        }
     }
     
     return nil
@@ -492,6 +526,117 @@ func (r *Website) validateURL() *field.Error {
     
     return nil
 }
+```
+
+## 실습: 웹훅 구현 및 테스트
+
+### 1단계: 웹훅 활성화
+
+```bash
+# advanced-crd-project 디렉터리로 이동
+cd advanced-crd-project
+
+# 웹훅 활성화
+kubebuilder create webhook \
+  --group mygroup \
+  --version v1 \
+  --kind Website \
+  --defaulting \
+  --programmatic-validation
+```
+
+### 2단계: 웹훅 코드 구현
+
+생성된 `api/v1/website_webhook.go` 파일에 위의 검증 로직을 추가합니다.
+
+### 3단계: 매니페스트 생성 및 배포
+
+```bash
+# 매니페스트 생성
+make manifests
+
+# 웹훅 배포
+make deploy
+```
+
+### 4단계: 웹훅 테스트
+
+#### 정상적인 Website 생성
+```bash
+# 정상적인 Website 생성
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: test-website
+spec:
+  url: "https://example.com"
+  replicas: 3
+  image: "nginx:latest"
+  port: 80
+EOF
+```
+
+#### 잘못된 URL로 테스트
+```bash
+# 잘못된 URL로 Website 생성 시도
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: invalid-website
+spec:
+  url: "invalid-url"
+  replicas: 3
+  image: "nginx:latest"
+  port: 80
+EOF
+```
+
+예상 결과: `admission webhook "vwebsite.kb.io" denied the request`
+
+#### 잘못된 포트로 테스트
+```bash
+# 잘못된 포트로 Website 생성 시도
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: invalid-port-website
+spec:
+  url: "https://example.com"
+  replicas: 3
+  image: "nginx:latest"
+  port: 22
+EOF
+```
+
+예상 결과: `admission webhook "vwebsite.kb.io" denied the request`
+
+### 5단계: 기본값 설정 테스트
+
+```bash
+# 기본값이 설정되는지 확인
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: default-website
+spec:
+  url: "https://example.com"
+EOF
+
+# 생성된 Website 확인
+kubectl get website default-website -o yaml
+```
+
+예상 결과: `replicas: 3`, `image: "nginx:latest"`, `port: 80`이 자동으로 설정됨
+
+### 6단계: 웹훅 로그 확인
+
+```bash
+# 웹훅 컨트롤러 로그 확인
+kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-controller-manager -f
 ```
 
 ## 다음 단계
