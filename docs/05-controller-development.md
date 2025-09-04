@@ -315,6 +315,62 @@ func (r *WebsiteReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 ```
 
+## 컨트롤러 개발 단계 개요
+
+컨트롤러 개발은 다음과 같은 8단계로 구성됩니다:
+
+```
+1단계: 기본 구조 및 Import
+    ↓
+2단계: RBAC 권한 설정
+    ↓
+3단계: 메인 Reconcile 함수
+    ↓
+4단계: Deployment 관리
+    ↓
+5단계: Service 관리
+    ↓
+6단계: 상태 관리
+    ↓
+7단계: 헬퍼 함수들
+    ↓
+8단계: 컨트롤러 등록
+```
+
+### 각 단계별 설명
+
+**1단계: 기본 구조 및 Import**
+- 컨트롤러 패키지와 필요한 모든 import 설정
+- `WebsiteReconciler` 구조체 정의
+
+**2단계: RBAC 권한 설정**
+- Kubernetes 리소스에 대한 접근 권한 설정
+- `//+kubebuilder:rbac` 마커로 권한 정의
+
+**3단계: 메인 Reconcile 함수**
+- 컨트롤러의 핵심 로직
+- Website 리소스 조회 및 각 하위 리소스 조정 호출
+
+**4단계: Deployment 관리**
+- Deployment 생성/업데이트/삭제 로직
+- `reconcileDeployment` 함수 구현
+
+**5단계: Service 관리**
+- Service 생성/업데이트/삭제 로직
+- `reconcileService` 함수 구현
+
+**6단계: 상태 관리**
+- Website 리소스의 상태 업데이트
+- `updateStatus` 함수 구현
+
+**7단계: 헬퍼 함수들**
+- 재사용 가능한 유틸리티 함수들
+- `getLabels`, `buildDeployment`, `buildService` 등
+
+**8단계: 컨트롤러 등록**
+- Manager에 컨트롤러 등록
+- `SetupWithManager` 함수 구현
+
 ## 단계별 구현 가이드
 
 이제 위의 완성된 코드를 단계별로 분해해서 설명하겠습니다.
@@ -645,11 +701,111 @@ kubectl describe website website-sample
 
 ## 문제 해결
 
+### 실제 트러블슈팅 사례: Website 오브젝트 생성 시 Deployment/Service가 생성되지 않는 문제
+
+#### 문제 상황
+```bash
+# Website 오브젝트는 생성됨
+$ kubectl get websites
+NAME             URL                   REPLICAS   AVAILABLE   AGE
+website-sample   https://example.com   3                      6m58s
+
+# 하지만 Deployment와 Service가 생성되지 않음
+$ kubectl get deployments
+No resources found in default namespace.
+
+$ kubectl get services
+NAME         TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)   AGE
+kubernetes   ClusterIP   10.96.0.1    <none>        443/TCP   36h
+```
+
+#### 1단계: 컨트롤러 상태 확인
+```bash
+# 컨트롤러 Pod 상태 확인
+$ kubectl get pods -n advanced-crd-project-system
+NAME                                                       READY   STATUS    RESTARTS   AGE
+advanced-crd-project-controller-manager-7944c7c6d7-fqfnc   1/1     Running   0          8m10s
+
+# 컨트롤러 로그 확인
+$ kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-controller-manager --tail=10
+2025-09-04T14:37:27Z    INFO    Website 조정 시작       {"controller": "website", "controllerGroup": "mygroup.example.com", "controllerKind": "Website", "Website": {"name":"website-sample","namespace":"default"}, "namespace": "default", "name": "website-sample", "reconcileID": "388dd0bc-d24f-49fd-aa43-8d80faeadc64", "name": "website-sample", "namespace": "default"}
+```
+
+**발견**: 컨트롤러가 "Website 조정 시작" 로그만 출력하고 그 이후 로그가 없음
+
+#### 2단계: 컨트롤러 코드와 실행 중인 버전 불일치 확인
+```bash
+# 실제 컨트롤러 파일에는 "Website 조정 시작" 로그가 없음
+$ grep -r "Website 조정 시작" internal/controller/
+# 결과 없음
+```
+
+**원인**: 이전 버전의 컨트롤러가 아직 실행 중
+
+#### 3단계: 컨트롤러 재빌드 및 배포
+```bash
+# 1. 컨트롤러 이미지 재빌드
+$ make docker-build
+
+# 2. Kind 클러스터에 이미지 로드
+$ kind load docker-image controller:latest --name crd-study
+
+# 3. 컨트롤러 재시작
+$ kubectl rollout restart deployment/advanced-crd-project-controller-manager -n advanced-crd-project-system
+```
+
+#### 4단계: RBAC 권한 문제 발견
+```bash
+# 새로운 컨트롤러 로그 확인
+$ kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-controller-manager --tail=50
+2025-09-04T14:47:15Z    ERROR   controller-runtime.cache.UnhandledError Failed to watch {"reflector": "pkg/mod/k8s.io/client-go@v0.33.0/tools/cache/reflector.go:285", "type": "*v1.Service", "error": "failed to list *v1.Service: services is forbidden: User \"system:serviceaccount:advanced-crd-project-system:advanced-crd-project-controller-manager\" cannot list resource \"services\" in API group \"\" at the cluster scope"}
+
+2025-09-04T14:47:17Z    ERROR   controller-runtime.cache.UnhandledError Failed to watch {"reflector": "pkg/mod/k8s.io/client-go@v0.33.0/tools/cache/reflector.go:285", "type": "*v1.Deployment", "error": "failed to list *v1.Deployment: deployments.apps is forbidden: User \"system:serviceaccount:advanced-crd-project-system:advanced-crd-project-controller-manager\" cannot list resource \"deployments\" in API group \"apps\" at the cluster scope"}
+```
+
+**원인**: RBAC 권한 부족 - 컨트롤러가 Deployment와 Service에 접근할 수 없음
+
+#### 5단계: RBAC 매니페스트 재생성 및 재배포
+```bash
+# 1. RBAC 매니페스트 재생성
+$ make manifests
+
+# 2. 완전 재배포
+$ make undeploy
+$ make deploy
+```
+
+#### 6단계: 최종 테스트
+```bash
+# Website 리소스 재생성
+$ kubectl delete website website-sample --ignore-not-found
+$ kubectl apply -f config/samples/mygroup_v1_website.yaml
+
+# 결과 확인
+$ kubectl get websites
+NAME             URL                   REPLICAS   AVAILABLE   AGE
+website-sample   https://example.com   3          3           20s
+
+$ kubectl get deployments
+NAME             READY   UP-TO-DATE   AVAILABLE   AGE
+website-sample   3/3     3            3           30s
+
+$ kubectl get services
+NAME             TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
+website-sample   ClusterIP   10.96.189.54   <none>        80/TCP    37s
+```
+
+#### 해결 요약
+1. **컨트롤러 버전 불일치**: 이전 버전이 실행 중이었음
+2. **RBAC 권한 부족**: Deployment와 Service 접근 권한이 없었음
+3. **해결 방법**: 컨트롤러 재빌드 + RBAC 매니페스트 재생성 + 완전 재배포
+
 ### 일반적인 문제들
 
 1. **무한 루프**: 상태 업데이트 시 무한 재시도 방지
 2. **권한 문제**: RBAC 설정 확인
 3. **리소스 충돌**: OwnerReference 설정으로 가비지 컬렉션 활용
+4. **컨트롤러 버전 불일치**: 코드 변경 후 재빌드/재배포 누락
 
 ### 디버깅 팁
 
@@ -660,8 +816,11 @@ kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-cont
 # 특정 리소스 이벤트 확인
 kubectl describe website website-sample
 
-# API 서버 로그 확인
-kubectl logs -n kube-system kube-apiserver-kind-control-plane
+# RBAC 권한 확인
+kubectl auth can-i list deployments --as=system:serviceaccount:advanced-crd-project-system:advanced-crd-project-controller-manager
+
+# 컨트롤러 재시작
+kubectl rollout restart deployment/advanced-crd-project-controller-manager -n advanced-crd-project-system
 ```
 
 ## 다음 단계
