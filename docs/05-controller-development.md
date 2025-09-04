@@ -13,7 +13,7 @@
 ### 1. Reconcile 루프
 
 ```mermaid
-flowchart TD
+flowchart LR
     A[Watch Event<br/>Create/Update/Delete] --> B[Reconcile<br/>비즈니스 로직]
     B --> C[Update Status<br/>상태 동기화]
     C --> D{Re-queue<br/>재시도/지연}
