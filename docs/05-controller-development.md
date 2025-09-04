@@ -12,19 +12,19 @@
 
 ### 1. Reconcile 루프
 
-```
-    Watch Event          Reconcile         Update Status
-   ┌─────────────┐      ┌─────────────┐    ┌─────────────┐
-   │   Create    │─────▶│  비즈니스    │───▶│   상태      │
-   │   Update    │      │   로직      │    │  동기화     │
-   │   Delete    │      │             │    │             │
-   └─────────────┘      └─────────────┘    └─────────────┘
-                                │
-                                ▼
-                        ┌─────────────┐
-                        │  Re-queue   │
-                        │ (재시도/지연) │
-                        └─────────────┘
+```mermaid
+flowchart TD
+    A[Watch Event<br/>Create/Update/Delete] --> B[Reconcile<br/>비즈니스 로직]
+    B --> C[Update Status<br/>상태 동기화]
+    C --> D{Re-queue<br/>재시도/지연}
+    D -->|Yes| B
+    D -->|No| E[완료]
+    
+    style A fill:#e1f5fe
+    style B fill:#f3e5f5
+    style C fill:#e8f5e8
+    style D fill:#fff3e0
+    style E fill:#f1f8e9
 ```
 
 **Reconcile 루프의 동작 과정:**
