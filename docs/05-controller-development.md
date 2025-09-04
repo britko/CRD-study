@@ -21,7 +21,7 @@
 
 이 과정을 **Reconcile 루프**라고 하며, 리소스가 원하는 상태에 도달할 때까지 반복됩니다.
 
-### 1. Reconcile 루프
+### Reconcile 루프
 
 ```mermaid
 flowchart LR
@@ -45,13 +45,25 @@ flowchart LR
 3. **Update Status**: 리소스의 상태를 업데이트
 4. **Re-queue**: 필요시 재시도하거나 일정 시간 후 다시 조정
 
-### 2. 기본 구조
+## 완성된 컨트롤러 코드
+
+먼저 완성된 컨트롤러 코드를 전체적으로 살펴보겠습니다:
 
 ```go
+package controller
+
 import (
     "context"
+    "fmt"
+    "time"
     
+    appsv1 "k8s.io/api/apps/v1"
+    corev1 "k8s.io/api/core/v1"
+    "k8s.io/apimachinery/pkg/api/errors"
     "k8s.io/apimachinery/pkg/runtime"
+    "k8s.io/apimachinery/pkg/types"
+    "k8s.io/apimachinery/pkg/util/intstr"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     ctrl "sigs.k8s.io/controller-runtime"
     "sigs.k8s.io/controller-runtime/pkg/client"
     logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -59,31 +71,12 @@ import (
     mygroupv1 "github.com/britko/advanced-crd-project/api/v1"
 )
 
+// WebsiteReconciler reconciles a Website object
 type WebsiteReconciler struct {
-    client.Client        // Kubernetes API 클라이언트
-    Scheme *runtime.Scheme // 타입 스키마
+    client.Client
+    Scheme *runtime.Scheme
 }
 
-func (r *WebsiteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    _ = logf.FromContext(ctx)  // 로거는 context에서 가져옴
-    
-    // 1. 리소스 조회
-    // 2. 비즈니스 로직 실행
-    // 3. 상태 업데이트
-    // 4. 결과 반환
-}
-```
-
-**📝 참고**: 
-- **로거 사용**: `logr.Logger` 필드 대신 `logf.FromContext(ctx)`로 context에서 로거를 가져옴
-- **Import**: `logf "sigs.k8s.io/controller-runtime/pkg/log"` 패키지 사용
-- **실제 구조**: kubebuilder가 생성한 실제 컨트롤러 구조와 일치
-
-## 컨트롤러 구현 단계
-
-### 1단계: 기본 구조 설정
-
-```go
 //+kubebuilder:rbac:groups=mygroup.example.com,resources=websites,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=mygroup.example.com,resources=websites/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=mygroup.example.com,resources=websites/finalizers,verbs=update
@@ -91,67 +84,54 @@ func (r *WebsiteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
 
 func (r *WebsiteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    logger := log.FromContext(ctx)
+    logger := logf.FromContext(ctx)
     
     // Website 리소스 조회
     var website mygroupv1.Website
     if err := r.Get(ctx, req.NamespacedName, &website); err != nil {
-        return ctrl.Result{}, client.IgnoreNotFound(err)
+        if errors.IsNotFound(err) {
+            logger.Info("Website resource not found. Ignoring since object must be deleted.")
+            return ctrl.Result{}, nil
+        }
+        logger.Error(err, "Failed to get Website")
+        return ctrl.Result{}, err
     }
     
-    logger.Info("Website 조정 시작", "name", website.Name, "namespace", website.Namespace)
-    
-    // 비즈니스 로직 실행
-    if err := r.reconcileWebsite(ctx, &website); err != nil {
+    // Deployment 조정
+    if err := r.reconcileDeployment(ctx, &website); err != nil {
+        logger.Error(err, "Failed to reconcile Deployment")
         return ctrl.Result{}, err
+    }
+    
+    // Service 조정
+    if err := r.reconcileService(ctx, &website); err != nil {
+        logger.Error(err, "Failed to reconcile Service")
+        return ctrl.Result{}, err
+    }
+    
+    // 상태 업데이트
+    if err := r.updateStatus(ctx, &website); err != nil {
+        logger.Error(err, "Failed to update status")
+        return ctrl.Result{RequeueAfter: time.Second * 5}, err
     }
     
     return ctrl.Result{}, nil
 }
-```
 
-### 2단계: 비즈니스 로직 구현
-
-```go
-func (r *WebsiteReconciler) reconcileWebsite(ctx context.Context, website *mygroupv1.Website) error {
-    // Deployment 생성/업데이트
-    if err := r.reconcileDeployment(ctx, website); err != nil {
-        return fmt.Errorf("failed to reconcile deployment: %w", err)
-    }
-    
-    // Service 생성/업데이트
-    if err := r.reconcileService(ctx, website); err != nil {
-        return fmt.Errorf("failed to reconcile service: %w", err)
-    }
-    
-    // 상태 업데이트
-    if err := r.updateStatus(ctx, website); err != nil {
-        return fmt.Errorf("failed to update status: %w", err)
-    }
-    
-    return nil
-}
-```
-
-### 3단계: 하위 리소스 관리
-
-#### Deployment 관리
-
-```go
+// reconcileDeployment는 Deployment를 조정합니다
 func (r *WebsiteReconciler) reconcileDeployment(ctx context.Context, website *mygroupv1.Website) error {
-    // 기존 Deployment 조회
     var deployment appsv1.Deployment
     err := r.Get(ctx, types.NamespacedName{
         Name:      website.Name,
         Namespace: website.Namespace,
     }, &deployment)
     
-    if client.IgnoreNotFound(err) != nil {
+    if err != nil && !errors.IsNotFound(err) {
         return err
     }
     
-    // Deployment가 존재하지 않으면 생성
-    if err != nil {
+    if errors.IsNotFound(err) {
+        // Deployment 생성
         deployment = r.buildDeployment(website)
         if err := r.Create(ctx, &deployment); err != nil {
             return err
@@ -159,7 +139,7 @@ func (r *WebsiteReconciler) reconcileDeployment(ctx context.Context, website *my
         return nil
     }
     
-    // Deployment 업데이트
+    // Deployment 업데이트 확인
     if r.deploymentNeedsUpdate(&deployment, website) {
         r.updateDeployment(&deployment, website)
         if err := r.Update(ctx, &deployment); err != nil {
@@ -170,6 +150,70 @@ func (r *WebsiteReconciler) reconcileDeployment(ctx context.Context, website *my
     return nil
 }
 
+// reconcileService는 Service를 조정합니다
+func (r *WebsiteReconciler) reconcileService(ctx context.Context, website *mygroupv1.Website) error {
+    var service corev1.Service
+    err := r.Get(ctx, types.NamespacedName{
+        Name:      website.Name,
+        Namespace: website.Namespace,
+    }, &service)
+    
+    if err != nil && !errors.IsNotFound(err) {
+        return err
+    }
+    
+    if errors.IsNotFound(err) {
+        // Service 생성
+        service = r.buildService(website)
+        if err := r.Create(ctx, &service); err != nil {
+            return err
+        }
+        return nil
+    }
+    
+    return nil
+}
+
+// updateStatus는 Website의 상태를 업데이트합니다
+func (r *WebsiteReconciler) updateStatus(ctx context.Context, website *mygroupv1.Website) error {
+    // Deployment 상태 확인
+    var deployment appsv1.Deployment
+    if err := r.Get(ctx, types.NamespacedName{
+        Name:      website.Name,
+        Namespace: website.Namespace,
+    }, &deployment); err != nil {
+        return err
+    }
+    
+    // 상태 업데이트
+    website.Status.AvailableReplicas = deployment.Status.AvailableReplicas
+    
+    if deployment.Status.ReadyReplicas == website.Spec.Replicas {
+        website.Status.Conditions = []metav1.Condition{
+            {
+                Type:               "Ready",
+                Status:             metav1.ConditionTrue,
+                LastTransitionTime: metav1.Now(),
+                Reason:             "AllReplicasReady",
+                Message:            fmt.Sprintf("All %d replicas are ready", website.Spec.Replicas),
+            },
+        }
+    } else {
+        website.Status.Conditions = []metav1.Condition{
+            {
+                Type:               "Ready",
+                Status:             metav1.ConditionFalse,
+                LastTransitionTime: metav1.Now(),
+                Reason:             "ReplicasNotReady",
+                Message:            fmt.Sprintf("%d/%d replicas are ready", deployment.Status.ReadyReplicas, website.Spec.Replicas),
+            },
+        }
+    }
+    
+    return r.Status().Update(ctx, website)
+}
+
+// buildDeployment는 Website 스펙으로부터 Deployment를 생성합니다
 func (r *WebsiteReconciler) buildDeployment(website *mygroupv1.Website) appsv1.Deployment {
     return appsv1.Deployment{
         ObjectMeta: metav1.ObjectMeta{
@@ -206,33 +250,8 @@ func (r *WebsiteReconciler) buildDeployment(website *mygroupv1.Website) appsv1.D
         },
     }
 }
-```
 
-#### Service 관리
-
-```go
-func (r *WebsiteReconciler) reconcileService(ctx context.Context, website *mygroupv1.Website) error {
-    var service corev1.Service
-    err := r.Get(ctx, types.NamespacedName{
-        Name:      website.Name,
-        Namespace: website.Namespace,
-    }, &service)
-    
-    if client.IgnoreNotFound(err) != nil {
-        return err
-    }
-    
-    if err != nil {
-        service = r.buildService(website)
-        if err := r.Create(ctx, &service); err != nil {
-            return err
-        }
-        return nil
-    }
-    
-    return nil
-}
-
+// buildService는 Website 스펙으로부터 Service를 생성합니다
 func (r *WebsiteReconciler) buildService(website *mygroupv1.Website) corev1.Service {
     return corev1.Service{
         ObjectMeta: metav1.ObjectMeta{
@@ -244,224 +263,385 @@ func (r *WebsiteReconciler) buildService(website *mygroupv1.Website) corev1.Serv
             },
         },
         Spec: corev1.ServiceSpec{
-            Selector: r.getLabels(website),
+            Type: corev1.ServiceTypeClusterIP,
             Ports: []corev1.ServicePort{
                 {
-                    Port:       website.Spec.Port,
+                    Port:       80,
                     TargetPort: intstr.FromInt(int(website.Spec.Port)),
+                    Protocol:   corev1.ProtocolTCP,
                 },
             },
+            Selector: r.getLabels(website),
         },
     }
 }
+
+// getLabels는 일관된 라벨을 반환합니다
+func (r *WebsiteReconciler) getLabels(website *mygroupv1.Website) map[string]string {
+    return map[string]string{
+        "app":     "website",
+        "website": website.Name,
+    }
+}
+
+// deploymentNeedsUpdate는 Deployment 업데이트가 필요한지 확인합니다
+func (r *WebsiteReconciler) deploymentNeedsUpdate(deployment *appsv1.Deployment, website *mygroupv1.Website) bool {
+    if *deployment.Spec.Replicas != website.Spec.Replicas {
+        return true
+    }
+    if deployment.Spec.Template.Spec.Containers[0].Image != website.Spec.Image {
+        return true
+    }
+    if deployment.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort != website.Spec.Port {
+        return true
+    }
+    return false
+}
+
+// updateDeployment는 Deployment를 업데이트합니다
+func (r *WebsiteReconciler) updateDeployment(deployment *appsv1.Deployment, website *mygroupv1.Website) {
+    deployment.Spec.Replicas = &website.Spec.Replicas
+    deployment.Spec.Template.Spec.Containers[0].Image = website.Spec.Image
+    deployment.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort = website.Spec.Port
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *WebsiteReconciler) SetupWithManager(mgr ctrl.Manager) error {
+    return ctrl.NewControllerManagedBy(mgr).
+        For(&mygroupv1.Website{}).
+        Owns(&appsv1.Deployment{}).
+        Owns(&corev1.Service{}).
+        Complete(r)
+}
 ```
 
-### 4단계: 상태 관리
+## 단계별 구현 가이드
+
+이제 위의 완성된 코드를 단계별로 분해해서 설명하겠습니다.
+
+### 1단계: 기본 구조 및 Import
+
+**목표**: 컨트롤러의 기본 구조와 필요한 import 설정
 
 ```go
-func (r *WebsiteReconciler) updateStatus(ctx context.Context, website *mygroupv1.Website) error {
-    // Deployment 상태 확인
+package controller
+
+import (
+    "context"
+    "fmt"
+    "time"
+    
+    appsv1 "k8s.io/api/apps/v1"
+    corev1 "k8s.io/api/core/v1"
+    "k8s.io/apimachinery/pkg/api/errors"
+    "k8s.io/apimachinery/pkg/runtime"
+    "k8s.io/apimachinery/pkg/types"
+    "k8s.io/apimachinery/pkg/util/intstr"
+    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+    ctrl "sigs.k8s.io/controller-runtime"
+    "sigs.k8s.io/controller-runtime/pkg/client"
+    logf "sigs.k8s.io/controller-runtime/pkg/log"
+    
+    mygroupv1 "github.com/britko/advanced-crd-project/api/v1"
+)
+
+// WebsiteReconciler reconciles a Website object
+type WebsiteReconciler struct {
+    client.Client
+    Scheme *runtime.Scheme
+}
+```
+
+**📝 설명**:
+- **Import**: Deployment, Service, Pod 관리에 필요한 모든 타입들
+- **Struct**: `client.Client`로 Kubernetes API 호출, `Scheme`으로 타입 변환
+
+### 2단계: RBAC 권한 설정
+
+**목표**: 컨트롤러가 필요한 리소스에 접근할 수 있도록 권한 설정
+
+```go
+//+kubebuilder:rbac:groups=mygroup.example.com,resources=websites,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=mygroup.example.com,resources=websites/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=mygroup.example.com,resources=websites/finalizers,verbs=update
+//+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;delete
+```
+
+**📝 설명**:
+- **Website 리소스**: CRUD 모든 권한 + 상태 업데이트 권한
+- **Deployment**: 생성/관리 권한
+- **Service**: 생성/관리 권한
+
+### 3단계: 메인 Reconcile 함수
+
+**목표**: 컨트롤러의 핵심 로직 구현
+
+```go
+func (r *WebsiteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+    logger := logf.FromContext(ctx)
+    
+    // Website 리소스 조회
+    var website mygroupv1.Website
+    if err := r.Get(ctx, req.NamespacedName, &website); err != nil {
+        if errors.IsNotFound(err) {
+            logger.Info("Website resource not found. Ignoring since object must be deleted.")
+            return ctrl.Result{}, nil
+        }
+        logger.Error(err, "Failed to get Website")
+        return ctrl.Result{}, err
+    }
+    
+    // Deployment 조정
+    if err := r.reconcileDeployment(ctx, &website); err != nil {
+        logger.Error(err, "Failed to reconcile Deployment")
+        return ctrl.Result{}, err
+    }
+    
+    // Service 조정
+    if err := r.reconcileService(ctx, &website); err != nil {
+        logger.Error(err, "Failed to reconcile Service")
+        return ctrl.Result{}, err
+    }
+    
+    // 상태 업데이트
+    if err := r.updateStatus(ctx, &website); err != nil {
+        logger.Error(err, "Failed to update status")
+        return ctrl.Result{RequeueAfter: time.Second * 5}, err
+    }
+    
+    return ctrl.Result{}, nil
+}
+```
+
+**📝 설명**:
+1. **리소스 조회**: Website 리소스를 가져와서 존재 여부 확인
+2. **Deployment 조정**: Deployment 생성/업데이트
+3. **Service 조정**: Service 생성/관리
+4. **상태 업데이트**: Website의 상태를 실제 상태로 동기화
+
+### 4단계: Deployment 관리
+
+**목표**: Website 스펙에 따라 Deployment 생성/업데이트
+
+```go
+// reconcileDeployment는 Deployment를 조정합니다
+func (r *WebsiteReconciler) reconcileDeployment(ctx context.Context, website *mygroupv1.Website) error {
     var deployment appsv1.Deployment
     err := r.Get(ctx, types.NamespacedName{
         Name:      website.Name,
         Namespace: website.Namespace,
     }, &deployment)
     
-    if err != nil {
+    if err != nil && !errors.IsNotFound(err) {
+        return err
+    }
+    
+    if errors.IsNotFound(err) {
+        // Deployment 생성
+        deployment = r.buildDeployment(website)
+        if err := r.Create(ctx, &deployment); err != nil {
+            return err
+        }
+        return nil
+    }
+    
+    // Deployment 업데이트 확인
+    if r.deploymentNeedsUpdate(&deployment, website) {
+        r.updateDeployment(&deployment, website)
+        if err := r.Update(ctx, &deployment); err != nil {
+            return err
+        }
+    }
+    
+    return nil
+}
+```
+
+**📝 설명**:
+- **존재 확인**: Deployment가 이미 존재하는지 확인
+- **생성**: 없으면 새로 생성
+- **업데이트**: 있으면 변경사항이 있는지 확인 후 업데이트
+
+### 5단계: Service 관리
+
+**목표**: Website를 위한 Service 생성/관리
+
+```go
+// reconcileService는 Service를 조정합니다
+func (r *WebsiteReconciler) reconcileService(ctx context.Context, website *mygroupv1.Website) error {
+    var service corev1.Service
+    err := r.Get(ctx, types.NamespacedName{
+        Name:      website.Name,
+        Namespace: website.Namespace,
+    }, &service)
+    
+    if err != nil && !errors.IsNotFound(err) {
+        return err
+    }
+    
+    if errors.IsNotFound(err) {
+        // Service 생성
+        service = r.buildService(website)
+        if err := r.Create(ctx, &service); err != nil {
+            return err
+        }
+        return nil
+    }
+    
+    return nil
+}
+```
+
+**📝 설명**:
+- **Service 생성**: Website가 생성될 때 자동으로 Service도 생성
+- **포트 매핑**: Website의 포트를 Service로 노출
+
+### 6단계: 상태 관리
+
+**목표**: Website의 상태를 실제 Deployment 상태로 동기화
+
+```go
+// updateStatus는 Website의 상태를 업데이트합니다
+func (r *WebsiteReconciler) updateStatus(ctx context.Context, website *mygroupv1.Website) error {
+    // Deployment 상태 확인
+    var deployment appsv1.Deployment
+    if err := r.Get(ctx, types.NamespacedName{
+        Name:      website.Name,
+        Namespace: website.Namespace,
+    }, &deployment); err != nil {
         return err
     }
     
     // 상태 업데이트
     website.Status.AvailableReplicas = deployment.Status.AvailableReplicas
     
-    // 조건 업데이트
-    r.updateConditions(website, &deployment)
+    if deployment.Status.ReadyReplicas == website.Spec.Replicas {
+        website.Status.Conditions = []metav1.Condition{
+            {
+                Type:               "Ready",
+                Status:             metav1.ConditionTrue,
+                LastTransitionTime: metav1.Now(),
+                Reason:             "AllReplicasReady",
+                Message:            fmt.Sprintf("All %d replicas are ready", website.Spec.Replicas),
+            },
+        }
+    } else {
+        website.Status.Conditions = []metav1.Condition{
+            {
+                Type:               "Ready",
+                Status:             metav1.ConditionFalse,
+                LastTransitionTime: metav1.Now(),
+                Reason:             "ReplicasNotReady",
+                Message:            fmt.Sprintf("%d/%d replicas are ready", deployment.Status.ReadyReplicas, website.Spec.Replicas),
+            },
+        }
+    }
     
-    // 상태 저장
     return r.Status().Update(ctx, website)
 }
+```
 
-func (r *WebsiteReconciler) updateConditions(website *mygroupv1.Website, deployment *appsv1.Deployment) {
-    // 사용 가능한 복제본이 0인 경우
-    if deployment.Status.AvailableReplicas == 0 {
-        r.setCondition(website, "Available", metav1.ConditionFalse, "NoReplicas", "사용 가능한 복제본이 없습니다")
-    } else {
-        r.setCondition(website, "Available", metav1.ConditionTrue, "ReplicasReady", "복제본이 준비되었습니다")
-    }
-    
-    // 원하는 복제본 수와 일치하는 경우
-    if deployment.Status.AvailableReplicas == *deployment.Spec.Replicas {
-        r.setCondition(website, "Ready", metav1.ConditionTrue, "AllReplicasReady", "모든 복제본이 준비되었습니다")
-    } else {
-        r.setCondition(website, "Ready", metav1.ConditionFalse, "ReplicasNotReady", "일부 복제본이 준비되지 않았습니다")
+**📝 설명**:
+- **상태 동기화**: Deployment의 실제 상태를 Website 상태에 반영
+- **조건 설정**: Ready 상태를 명확히 표시
+- **사용자 피드백**: 현재 상태를 사용자가 쉽게 확인할 수 있도록 메시지 제공
+
+### 7단계: 헬퍼 함수들
+
+**목표**: 재사용 가능한 유틸리티 함수들 구현
+
+```go
+// getLabels는 일관된 라벨을 반환합니다
+func (r *WebsiteReconciler) getLabels(website *mygroupv1.Website) map[string]string {
+    return map[string]string{
+        "app":     "website",
+        "website": website.Name,
     }
 }
 
-func (r *WebsiteReconciler) setCondition(website *mygroupv1.Website, conditionType string, status metav1.ConditionStatus, reason, message string) {
-    now := metav1.Now()
-    
-    for i := range website.Status.Conditions {
-        if website.Status.Conditions[i].Type == conditionType {
-            if website.Status.Conditions[i].Status != status {
-                website.Status.Conditions[i].LastTransitionTime = now
-            }
-            website.Status.Conditions[i].Status = status
-            website.Status.Conditions[i].Reason = reason
-            website.Status.Conditions[i].Message = message
-            return
-        }
+// deploymentNeedsUpdate는 Deployment 업데이트가 필요한지 확인합니다
+func (r *WebsiteReconciler) deploymentNeedsUpdate(deployment *appsv1.Deployment, website *mygroupv1.Website) bool {
+    if *deployment.Spec.Replicas != website.Spec.Replicas {
+        return true
     }
-    
-    website.Status.Conditions = append(website.Status.Conditions, metav1.Condition{
-        Type:               conditionType,
-        Status:             status,
-        Reason:             reason,
-        Message:            message,
-        LastTransitionTime: now,
-    })
+    if deployment.Spec.Template.Spec.Containers[0].Image != website.Spec.Image {
+        return true
+    }
+    if deployment.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort != website.Spec.Port {
+        return true
+    }
+    return false
+}
+
+// updateDeployment는 Deployment를 업데이트합니다
+func (r *WebsiteReconciler) updateDeployment(deployment *appsv1.Deployment, website *mygroupv1.Website) {
+    deployment.Spec.Replicas = &website.Spec.Replicas
+    deployment.Spec.Template.Spec.Containers[0].Image = website.Spec.Image
+    deployment.Spec.Template.Spec.Containers[0].Ports[0].ContainerPort = website.Spec.Port
 }
 ```
 
-## 에러 처리 및 재시도
+**📝 설명**:
+- **라벨 관리**: 일관된 라벨링으로 리소스 연결
+- **변경 감지**: 불필요한 업데이트 방지
+- **효율적 업데이트**: 필요한 부분만 업데이트
 
-### 1. 에러 분류
+### 8단계: 컨트롤러 등록
 
-```go
-func (r *WebsiteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    // ... 리소스 조회 ...
-    
-    if err := r.reconcileWebsite(ctx, &website); err != nil {
-        // 일시적 에러인 경우 재시도
-        if isTransientError(err) {
-            return ctrl.Result{RequeueAfter: time.Second * 30}, nil
-        }
-        
-        // 영구적 에러인 경우 상태 업데이트
-        r.setCondition(&website, "Failed", metav1.ConditionTrue, "ReconcileError", err.Error())
-        r.Status().Update(ctx, &website)
-        
-        return ctrl.Result{}, err
-    }
-    
-    return ctrl.Result{}, nil
-}
-
-func isTransientError(err error) bool {
-    // 네트워크 에러, 일시적 리소스 부족 등
-    return strings.Contains(err.Error(), "connection refused") ||
-           strings.Contains(err.Error(), "resource quota exceeded")
-}
-```
-
-### 2. 지연 재시도
+**목표**: 컨트롤러를 매니저에 등록하여 동작 시작
 
 ```go
-func (r *WebsiteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    // ... 비즈니스 로직 ...
-    
-    // 성공적으로 완료되었지만 나중에 다시 확인하고 싶은 경우
-    return ctrl.Result{RequeueAfter: time.Minute * 5}, nil
-}
-```
-
-## 테스트 작성
-
-### 1. 단위 테스트
-
-```go
-func TestWebsiteReconciler_Reconcile(t *testing.T) {
-    // 테스트 케이스 설정
-    tests := []struct {
-        name    string
-        website *mygroupv1.Website
-        wantErr bool
-    }{
-        {
-            name: "정상적인 Website 조정",
-            website: &mygroupv1.Website{
-                ObjectMeta: metav1.ObjectMeta{
-                    Name:      "test-website",
-                    Namespace: "default",
-                },
-                Spec: mygroupv1.WebsiteSpec{
-                    URL:      "https://example.com",
-                    Replicas: 3,
-                },
-            },
-            wantErr: false,
-        },
-    }
-    
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            // 테스트 실행
-            // ...
-        })
-    }
-}
-```
-
-### 2. 통합 테스트
-
-```go
-func TestWebsiteReconciler_Integration(t *testing.T) {
-    // 테스트 환경 설정
-    env := &envtest.Environment{
-        CRDDirectoryPaths: []string{filepath.Join("..", "..", "config", "crd", "bases")},
-    }
-    
-    cfg, err := env.Start()
-    require.NoError(t, err)
-    defer env.Stop()
-    
-    // 컨트롤러 실행
-    // ...
-}
-```
-
-## 성능 최적화
-
-### 1. 캐싱 활용
-
-```go
+// SetupWithManager sets up the controller with the Manager.
 func (r *WebsiteReconciler) SetupWithManager(mgr ctrl.Manager) error {
     return ctrl.NewControllerManagedBy(mgr).
-        For(&mygroupv1.Website{}).
-        Owns(&appsv1.Deployment{}).
-        Owns(&corev1.Service{}).
-        WithOptions(controller.Options{
-            MaxConcurrentReconciles: 5, // 동시 조정 수 제한
-        }).
+        For(&mygroupv1.Website{}).           // Website 리소스 감시
+        Owns(&appsv1.Deployment{}).          // Deployment 소유권
+        Owns(&corev1.Service{}).             // Service 소유권
         Complete(r)
 }
 ```
 
-### 2. 이벤트 필터링
+**📝 설명**:
+- **For**: Website 리소스 변경을 감시
+- **Owns**: 생성한 Deployment, Service의 변경도 감시
+- **자동 정리**: Website가 삭제되면 소유한 리소스들도 자동 삭제
 
-```go
-func (r *WebsiteReconciler) SetupWithManager(mgr ctrl.Manager) error {
-    return ctrl.NewControllerManagedBy(mgr).
-        For(&mygroupv1.Website{}).
-        WithEventFilter(predicate.Funcs{
-            CreateFunc: func(e event.CreateEvent) bool {
-                // 특정 조건에서만 처리
-                return true
-            },
-            UpdateFunc: func(e event.UpdateEvent) bool {
-                // 의미 있는 변경사항만 처리
-                return r.hasMeaningfulChange(e.ObjectOld, e.ObjectNew)
-            },
-        }).
-        Complete(r)
-}
+## 테스트 및 배포
+
+### 빌드 및 배포
+
+```bash
+# 1. 매니페스트 생성
+make manifests
+
+# 2. 컨트롤러 빌드
+make docker-build
+
+# 3. 이미지를 클러스터에 로드
+kind load docker-image controller:latest --name crd-study
+
+# 4. 컨트롤러 배포
+make deploy
+
+# 5. 배포 확인
+kubectl get pods -n advanced-crd-project-system
 ```
 
-## 다음 단계
+### 테스트
 
-컨트롤러 개발을 완료했습니다! 이제 CRD의 데이터 무결성을 보장하는 고급 기능들을 구현해보겠습니다:
+```bash
+# 1. Website 리소스 생성
+kubectl apply -f config/samples/mygroup_v1_website.yaml
 
-- [웹훅 구현](./06-webhooks.md) - 검증 및 변환 웹훅 구현
-- [검증 및 기본값 설정](./07-validation-defaulting.md) - 스키마 검증 및 기본값
+# 2. 생성된 리소스 확인
+kubectl get websites
+kubectl get deployments
+kubectl get services
+
+# 3. 상태 확인
+kubectl describe website website-sample
+```
 
 ## 문제 해결
 
@@ -483,3 +663,10 @@ kubectl describe website website-sample
 # API 서버 로그 확인
 kubectl logs -n kube-system kube-apiserver-kind-control-plane
 ```
+
+## 다음 단계
+
+컨트롤러 개발을 완료했습니다! 이제 CRD의 데이터 무결성을 보장하는 고급 기능들을 구현해보겠습니다:
+
+- [웹훅 구현](./06-webhooks.md) - 검증 및 변환 웹훅 구현
+- [검증 및 기본값 설정](./07-validation-defaulting.md) - 스키마 검증 및 기본값
