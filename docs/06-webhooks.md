@@ -205,28 +205,22 @@ func (v *WebsiteCustomValidator) ValidateDelete(_ context.Context, obj runtime.O
 }
 
 func (v *WebsiteCustomValidator) validateWebsite(website *mygroupv1.Website) error {
-    var allErrs field.ErrorList
-    
     // URL 검증
     if website.Spec.URL == "" {
-        allErrs = append(allErrs, field.Required(field.NewPath("spec", "url"), "URL은 필수입니다"))
+        return fmt.Errorf("URL은 필수입니다")
     }
     
     // Replicas 검증
     if website.Spec.Replicas < 1 || website.Spec.Replicas > 100 {
-        allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "replicas"), website.Spec.Replicas, "복제본 수는 1-100 범위여야 합니다"))
+        return fmt.Errorf("복제본 수는 1-100 범위여야 합니다")
     }
     
     // Port 검증
     if website.Spec.Port < 1 || website.Spec.Port > 65535 {
-        allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "port"), website.Spec.Port, "포트는 1-65535 범위여야 합니다"))
+        return fmt.Errorf("포트는 1-65535 범위여야 합니다")
     }
     
-    if len(allErrs) == 0 {
-        return nil
-    }
-    
-    return webhook.NewInvalid(schema.GroupKind{Group: "mygroup.example.com", Kind: "Website"}, website.Name, allErrs)
+    return nil
 }
 ```
 
@@ -327,28 +321,22 @@ func (v *WebsiteCustomValidator) ValidateDelete(_ context.Context, obj runtime.O
 
 // 메인 검증 함수
 func (v *WebsiteCustomValidator) validateWebsite(website *mygroupv1.Website) error {
-    var allErrs field.ErrorList
-    
     // URL 검증
     if website.Spec.URL == "" {
-        allErrs = append(allErrs, field.Required(field.NewPath("spec", "url"), "URL은 필수입니다"))
+        return fmt.Errorf("URL은 필수입니다")
     }
     
     // Replicas 검증
     if website.Spec.Replicas < 1 || website.Spec.Replicas > 100 {
-        allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "replicas"), website.Spec.Replicas, "복제본 수는 1-100 범위여야 합니다"))
+        return fmt.Errorf("복제본 수는 1-100 범위여야 합니다")
     }
     
     // Port 검증
     if website.Spec.Port < 1 || website.Spec.Port > 65535 {
-        allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "port"), website.Spec.Port, "포트는 1-65535 범위여야 합니다"))
+        return fmt.Errorf("포트는 1-65535 범위여야 합니다")
     }
     
-    if len(allErrs) == 0 {
-        return nil
-    }
-    
-    return webhook.NewInvalid(schema.GroupKind{Group: "mygroup.example.com", Kind: "Website"}, website.Name, allErrs)
+    return nil
 }
 ```
 
