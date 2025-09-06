@@ -234,6 +234,16 @@ func (d *WebsiteCustomDefaulter) Default(_ context.Context, obj runtime.Object) 
         website.Spec.Replicas = 3
     }
     
+    // 라벨 설정 (Kubernetes 표준 라벨)
+    if website.Labels == nil {
+        website.Labels = make(map[string]string)
+    }
+    website.Labels["app.kubernetes.io/name"] = "website"
+    website.Labels["app.kubernetes.io/instance"] = website.Name
+    website.Labels["app.kubernetes.io/version"] = "v1.0.0"
+    website.Labels["app.kubernetes.io/component"] = "web-application"
+    website.Labels["app.kubernetes.io/part-of"] = "advanced-crd-project"
+    
     return nil
 }
 
@@ -270,14 +280,19 @@ func (v *WebsiteCustomValidator) validateWebsite(website *mygroupv1.Website) err
         return fmt.Errorf("URL은 필수입니다")
     }
     
-    // Replicas 검증
-    if website.Spec.Replicas < 1 || website.Spec.Replicas > 100 {
-        return fmt.Errorf("복제본 수는 1-100 범위여야 합니다")
+    // Replicas 검증 (웹훅에서는 더 엄격한 검증)
+    if website.Spec.Replicas < 1 || website.Spec.Replicas > 5 {
+        return fmt.Errorf("웹훅 검증: 복제본 수는 1-5 범위여야 합니다 (현재: %d)", website.Spec.Replicas)
     }
     
     // Port 검증
     if website.Spec.Port < 1 || website.Spec.Port > 65535 {
         return fmt.Errorf("포트는 1-65535 범위여야 합니다")
+    }
+    
+    // 비즈니스 로직 검증: 특정 이미지 사용 금지
+    if website.Spec.Image == "nginx:alpine" {
+        return fmt.Errorf("보안상의 이유로 nginx:alpine 이미지는 사용할 수 없습니다")
     }
     
     return nil
@@ -290,6 +305,8 @@ func (v *WebsiteCustomValidator) validateWebsite(website *mygroupv1.Website) err
 
 ### 1단계: Validating Webhook 구현
 
+**목표**: 리소스 생성/수정 시 비즈니스 규칙 검증
+
 생성된 `internal/webhook/v1/website_webhook.go` 파일에 검증 로직을 구현합니다:
 
 ```go
@@ -297,7 +314,16 @@ func (v *WebsiteCustomValidator) validateWebsite(website *mygroupv1.Website) err
 type WebsiteCustomValidator struct{}
 
 var _ webhook.CustomValidator = &WebsiteCustomValidator{}
+```
 
+**📝 설명**:
+- **WebsiteCustomValidator**: Validating Webhook의 핵심 구조체
+- **CustomValidator 인터페이스**: `ValidateCreate`, `ValidateUpdate`, `ValidateDelete` 메서드 구현 필요
+- **컴파일 타임 검증**: `var _ webhook.CustomValidator = &WebsiteCustomValidator{}`로 인터페이스 구현 확인
+
+#### 검증 함수들 구현
+
+```go
 // 검증 함수들
 func (v *WebsiteCustomValidator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
     website, ok := obj.(*mygroupv1.Website)
@@ -318,7 +344,18 @@ func (v *WebsiteCustomValidator) ValidateUpdate(_ context.Context, oldObj, newOb
 func (v *WebsiteCustomValidator) ValidateDelete(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
     return nil, nil
 }
+```
 
+**📝 설명**:
+- **ValidateCreate**: 리소스 생성 시 검증 (가장 중요한 검증)
+- **ValidateUpdate**: 리소스 수정 시 검증 (새로운 값만 검증)
+- **ValidateDelete**: 리소스 삭제 시 검증 (보통 허용, 특별한 경우만 제한)
+- **타입 변환**: `runtime.Object`를 `*mygroupv1.Website`로 변환하여 검증
+- **에러 처리**: 타입 변환 실패 시 명확한 에러 메시지 반환
+
+#### 비즈니스 로직 검증 구현
+
+```go
 // 메인 검증 함수
 func (v *WebsiteCustomValidator) validateWebsite(website *mygroupv1.Website) error {
     // URL 검증
@@ -326,9 +363,9 @@ func (v *WebsiteCustomValidator) validateWebsite(website *mygroupv1.Website) err
         return fmt.Errorf("URL은 필수입니다")
     }
     
-    // Replicas 검증
-    if website.Spec.Replicas < 1 || website.Spec.Replicas > 100 {
-        return fmt.Errorf("복제본 수는 1-100 범위여야 합니다")
+    // Replicas 검증 (웹훅에서는 더 엄격한 검증)
+    if website.Spec.Replicas < 1 || website.Spec.Replicas > 5 {
+        return fmt.Errorf("웹훅 검증: 복제본 수는 1-5 범위여야 합니다 (현재: %d)", website.Spec.Replicas)
     }
     
     // Port 검증
@@ -336,11 +373,26 @@ func (v *WebsiteCustomValidator) validateWebsite(website *mygroupv1.Website) err
         return fmt.Errorf("포트는 1-65535 범위여야 합니다")
     }
     
+    // 비즈니스 로직 검증: 특정 이미지 사용 금지
+    if website.Spec.Image == "nginx:alpine" {
+        return fmt.Errorf("보안상의 이유로 nginx:alpine 이미지는 사용할 수 없습니다")
+    }
+    
     return nil
 }
 ```
 
+**📝 설명**:
+- **URL 필수 검증**: 빈 URL 방지
+- **복제본 수 제한**: 웹훅에서는 CRD 스키마보다 더 엄격한 제한 (1-5개)
+- **포트 범위 검증**: 표준 포트 범위 검증 (1-65535)
+- **보안 정책**: 특정 이미지 사용 금지 (실무에서 자주 사용되는 패턴)
+- **에러 메시지**: 한국어로 명확한 에러 메시지 제공
+```
+
 ### 2단계: Mutating Webhook 구현
+
+**목표**: 리소스 생성/수정 시 기본값 설정 및 자동 변환
 
 **같은 파일**에 Mutating Webhook 로직을 추가합니다:
 
@@ -349,7 +401,17 @@ func (v *WebsiteCustomValidator) validateWebsite(website *mygroupv1.Website) err
 type WebsiteCustomDefaulter struct{}
 
 var _ webhook.CustomDefaulter = &WebsiteCustomDefaulter{}
+```
 
+**📝 설명**:
+- **WebsiteCustomDefaulter**: Mutating Webhook의 핵심 구조체
+- **CustomDefaulter 인터페이스**: `Default` 메서드 구현 필요
+- **실행 순서**: Mutating Webhook이 Validating Webhook보다 **먼저** 실행됨
+- **변경 가능**: 리소스 내용을 실제로 수정할 수 있음
+
+#### 기본값 설정 및 라벨 자동 추가
+
+```go
 // 기본값 설정 함수
 func (d *WebsiteCustomDefaulter) Default(_ context.Context, obj runtime.Object) error {
     website, ok := obj.(*mygroupv1.Website)
@@ -368,19 +430,49 @@ func (d *WebsiteCustomDefaulter) Default(_ context.Context, obj runtime.Object) 
         website.Spec.Replicas = 3
     }
     
-    // 라벨 설정
+    // 라벨 설정 (Kubernetes 표준 라벨)
     if website.Labels == nil {
         website.Labels = make(map[string]string)
     }
-    if website.Labels["app"] == "" {
-        website.Labels["app"] = website.Name
-    }
+    website.Labels["app.kubernetes.io/name"] = "website"
+    website.Labels["app.kubernetes.io/instance"] = website.Name
+    website.Labels["app.kubernetes.io/version"] = "v1.0.0"
+    website.Labels["app.kubernetes.io/component"] = "web-application"
+    website.Labels["app.kubernetes.io/part-of"] = "advanced-crd-project"
     
     return nil
 }
 ```
 
+**📝 설명**:
+- **기본값 설정**: 빈 값일 때만 기본값으로 설정 (덮어쓰기 방지)
+- **Kubernetes 표준 라벨**: `app.kubernetes.io/*` 라벨 자동 설정
+- **리소스 관리**: 라벨을 통한 리소스 그룹핑 및 모니터링 가능
+- **실무 활용**: Prometheus, Grafana 등에서 라벨 기반 모니터링
+- **안전한 설정**: `nil` 체크 후 `make(map[string]string)` 초기화
+```
+
 ### 3단계: 매니페스트 생성 및 배포
+
+**목표**: 웹훅을 Kubernetes 클러스터에 배포하고 TLS 인증서 설정
+
+#### cert-manager 설치 (필수)
+
+**이유**: 웹훅은 HTTPS 통신을 위해 TLS 인증서가 필요합니다.
+
+웹훅은 TLS 인증서가 필요하므로 먼저 cert-manager를 설치해야 합니다:
+
+```bash
+# cert-manager 설치
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+
+# cert-manager 준비 대기
+kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=60s
+```
+
+#### 웹훅 배포
+
+**과정**: kubebuilder가 생성한 매니페스트를 Kubernetes에 배포합니다.
 
 ```bash
 # 매니페스트 생성
@@ -390,9 +482,34 @@ make manifests
 make deploy
 ```
 
+**📝 설명**:
+- **make manifests**: kubebuilder 마커를 기반으로 Kubernetes 매니페스트 생성
+- **make deploy**: 생성된 매니페스트를 클러스터에 배포
+- **자동 생성**: ValidatingWebhookConfiguration, MutatingWebhookConfiguration 자동 생성
+
+**배포 성공 확인:**
+```bash
+# 웹훅 설정 확인
+kubectl get validatingwebhookconfigurations
+kubectl get mutatingwebhookconfigurations
+
+# 컨트롤러 매니저 상태 확인
+kubectl get pods -n advanced-crd-project-system
+```
+
+**📝 설명**:
+- **ValidatingWebhookConfiguration**: 검증 웹훅 설정 확인
+- **MutatingWebhookConfiguration**: 변환 웹훅 설정 확인
+- **컨트롤러 매니저**: 웹훅 서버가 실행되는 파드 상태 확인
+
 ### 4단계: 웹훅 테스트
 
-#### 정상적인 Website 생성
+**목표**: 구현한 웹훅이 정상적으로 작동하는지 확인
+
+#### 1. 정상적인 Website 생성 (Mutating Webhook 테스트)
+
+**목적**: Mutating Webhook이 기본값 설정과 라벨 자동 추가를 수행하는지 확인
+
 ```bash
 kubectl apply -f - <<EOF
 apiVersion: mygroup.example.com/v1
@@ -407,22 +524,84 @@ spec:
 EOF
 ```
 
-#### 잘못된 데이터로 테스트
+**결과 확인:**
 ```bash
-# 잘못된 URL로 Website 생성 시도
+# 라벨이 자동으로 설정되었는지 확인
+kubectl get website test-website -o jsonpath='{.metadata.labels}' && echo
+
+# 예상 결과:
+# {"app.kubernetes.io/component":"web-application","app.kubernetes.io/instance":"test-website","app.kubernetes.io/name":"website","app.kubernetes.io/part-of":"advanced-crd-project","app.kubernetes.io/version":"v1.0.0"}
+```
+
+#### 2. Validating Webhook 테스트
+
+**목적**: Validating Webhook이 비즈니스 규칙을 올바르게 검증하는지 확인
+
+**복제본 수 초과 테스트:**
+```bash
 kubectl apply -f - <<EOF
 apiVersion: mygroup.example.com/v1
 kind: Website
 metadata:
-  name: invalid-website
+  name: webhook-test-website
 spec:
-  url: "invalid-url"
-  replicas: 0
-  port: 99999
+  url: "https://example.com"
+  replicas: 6  # 웹훅 검증 실패 (1-5 범위 초과)
+  port: 80
 EOF
 ```
 
-예상 결과: `admission webhook "vwebsite-v1.kb.io" denied the request`
+**예상 결과:**
+```
+Error from server (Forbidden): error when creating "STDIN": admission webhook "vwebsite-v1.kb.io" denied the request: 웹훅 검증: 복제본 수는 1-5 범위여야 합니다 (현재: 6)
+```
+
+**금지된 이미지 테스트:**
+```bash
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: forbidden-image-website
+spec:
+  url: "https://example.com"
+  replicas: 3
+  image: "nginx:alpine"  # 금지된 이미지
+  port: 80
+EOF
+```
+
+**예상 결과:**
+```
+Error from server (Forbidden): error when creating "STDIN": admission webhook "vwebsite-v1.kb.io" denied the request: 보안상의 이유로 nginx:alpine 이미지는 사용할 수 없습니다
+```
+
+#### 3. 정상 케이스 최종 확인
+
+**목적**: 모든 검증을 통과하는 정상적인 리소스가 올바르게 생성되는지 확인
+
+```bash
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: valid-website
+spec:
+  url: "https://example.com"
+  replicas: 3  # 웹훅 검증 통과 (1-5 범위)
+  image: "nginx:latest"  # 허용된 이미지
+  port: 80
+EOF
+```
+
+**결과 확인:**
+```bash
+# 생성된 Website 목록 확인
+kubectl get websites
+
+# 라벨 설정 확인
+kubectl get website valid-website -o jsonpath='{.metadata.labels}' && echo
+```
 
 #### 기본값 설정 테스트
 ```bash
@@ -600,21 +779,105 @@ func (v *WebsiteCustomValidator) validateURL(website *mygroupv1.Website) *field.
 
 ## 문제 해결
 
-### 일반적인 문제들
+### 1. make deploy 실패 문제
+
+**증상:**
+```
+resource mapping not found for name: "advanced-crd-project-metrics-certs" namespace: "advanced-crd-project-system" from "STDIN": no matches for kind "Certificate" in version "cert-manager.io/v1"
+ensure CRDs are installed first
+```
+
+**원인:** cert-manager가 설치되지 않아서 웹훅의 TLS 인증서를 생성할 수 없음
+
+**해결 방법:**
+```bash
+# 1. cert-manager 설치
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+
+# 2. cert-manager 준비 대기
+kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=60s
+
+# 3. 웹훅 재배포
+make deploy
+```
+
+### 2. 웹훅 서비스 연결 실패
+
+**증상:**
+```
+Error from server (InternalError): error when creating "STDIN": Internal error occurred: failed calling webhook "mwebsite-v1.kb.io": failed to call webhook: Post "https://advanced-crd-project-webhook-service.advanced-crd-project-system.svc:443/mutate-mygroup-example-com-v1-website?timeout=10s": dial tcp 10.96.34.62:443: connect: connection refused
+```
+
+**원인:** 컨트롤러 매니저가 웹훅 서버를 시작하지 못함
+
+**해결 방법:**
+```bash
+# 1. 컨트롤러 매니저 로그 확인
+kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-controller-manager
+
+# 2. 웹훅 서버 시작 확인 (다음 로그가 있어야 함)
+# INFO controller-runtime.webhook Starting webhook server
+# INFO controller-runtime.webhook Serving webhook server {"host": "", "port": 9443}
+
+# 3. 컨트롤러 재시작
+kubectl rollout restart deployment/advanced-crd-project-controller-manager -n advanced-crd-project-system
+```
+
+### 3. 웹훅이 작동하지 않는 경우
+
+**디버깅 단계:**
+
+```bash
+# 1. 웹훅 설정 확인
+kubectl get validatingwebhookconfigurations
+kubectl get mutatingwebhookconfigurations
+
+# 2. 웹훅 서비스 상태 확인
+kubectl get svc -n advanced-crd-project-system
+kubectl get endpoints -n advanced-crd-project-system
+
+# 3. 컨트롤러 매니저 상태 확인
+kubectl get pods -n advanced-crd-project-system
+
+# 4. 인증서 확인
+kubectl get secret -n advanced-crd-project-system
+
+# 5. 컨트롤러 매니저 로그 확인
+kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-controller-manager --tail=50
+```
+
+### 4. 일반적인 문제들
 
 1. **웹훅 서비스 연결 실패**: 서비스 및 엔드포인트 확인
 2. **인증서 문제**: TLS 인증서 설정 확인
 3. **권한 문제**: RBAC 설정 확인
+4. **ENABLE_WEBHOOKS 환경변수**: 기본값은 `true`이므로 웹훅이 활성화되어야 함
 
-### 디버깅 팁
+### 5. 성공적인 배포 확인
+
+웹훅이 정상적으로 작동하는지 확인하는 방법:
 
 ```bash
-# 웹훅 서비스 상태 확인
-kubectl get svc -n my-crd-project-system
+# 1. 웹훅 설정이 생성되었는지 확인
+kubectl get validatingwebhookconfigurations | grep advanced-crd-project
+kubectl get mutatingwebhookconfigurations | grep advanced-crd-project
 
-# 엔드포인트 확인
-kubectl get endpoints -n my-crd-project-system
+# 2. 컨트롤러 매니저 로그에서 웹훅 등록 확인
+kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-controller-manager | grep -E "(webhook|Registering)"
 
-# 인증서 확인
-kubectl get secret -n my-crd-project-system
+# 3. 실제 테스트로 확인
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: test-webhook
+spec:
+  url: "https://example.com"
+  replicas: 3
+  image: "nginx:latest"
+  port: 80
+EOF
+
+# 4. 라벨이 자동으로 설정되었는지 확인 (Mutating Webhook 작동 확인)
+kubectl get website test-webhook -o jsonpath='{.metadata.labels}' && echo
 ```
