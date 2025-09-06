@@ -1580,7 +1580,7 @@ kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-cont
 
 웹훅의 성능을 극대화하고 운영 환경에서의 안정성을 보장하기 위한 고급 최적화 기법들은 별도 문서에서 자세히 다룹니다.
 
-**📖 상세 내용**: [웹훅 성능 최적화](./06-1-performance-optimization.md)
+**📖 상세 내용**: [웹훅 성능 최적화](./06a-performance-optimization.md)
 
 ### 주요 최적화 영역
 
@@ -1594,6 +1594,6 @@ kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-cont
 
 웹훅 구현을 완료했습니다! 이제 CRD의 데이터 검증과 기본값 설정을 위한 고급 기능들을 구현해보겠습니다:
 
-- [웹훅 성능 최적화](./06-1-performance-optimization.md) - 고급 성능 최적화 기법
+- [웹훅 성능 최적화](./06a-performance-optimization.md) - 고급 성능 최적화 기법
 - [검증 및 기본값 설정](./07-validation-defaulting.md) - 스키마 검증 및 기본값
 - [CRD 버전 관리](./08-versioning.md) - CRD 버전 관리 및 마이그레이션
