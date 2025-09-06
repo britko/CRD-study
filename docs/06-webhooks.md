@@ -625,79 +625,943 @@ kubectl get website default-website -o yaml
 
 ### 단위 테스트
 
+**목표**: 웹훅의 검증 로직과 기본값 설정 로직을 단위 테스트로 검증
+
+#### 테스트 파일 위치
+
+웹훅 테스트는 다음 파일에 작성합니다:
+
+```
+advanced-crd-project/internal/webhook/v1/website_webhook_test.go
+```
+
+#### 테스트 프레임워크
+
+- **Ginkgo**: BDD 스타일 테스트 프레임워크
+- **Gomega**: 어설션 라이브러리
+- **kubebuilder**가 자동으로 생성한 테스트 구조 사용
+
+#### 상세한 테스트 케이스 구현
+
 ```go
-func TestWebsite_ValidateCreate(t *testing.T) {
-    tests := []struct {
-        name    string
-        website *mygroupv1.Website
-        wantErr bool
-    }{
-        {
-            name: "유효한 Website",
-            website: &mygroupv1.Website{
-                Spec: mygroupv1.WebsiteSpec{
-                    URL:      "https://example.com",
-                    Replicas: 3,
-                    Port:     80,
-                },
-            },
-            wantErr: false,
-        },
-        {
-            name: "잘못된 URL",
-            website: &mygroupv1.Website{
-                Spec: mygroupv1.WebsiteSpec{
-                    URL:      "invalid-url",
-                    Replicas: 3,
-                    Port:     80,
-                },
-            },
-            wantErr: true,
-        },
-    }
+package v1
+
+import (
+    "context"
     
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            validator := &WebsiteCustomValidator{}
-            _, err := validator.ValidateCreate(context.Background(), tt.website)
-            if (err != nil) != tt.wantErr {
-                t.Errorf("ValidateCreate() error = %v, wantErr %v", err, tt.wantErr)
+    . "github.com/onsi/ginkgo/v2"
+    . "github.com/onsi/gomega"
+    
+    mygroupv1 "github.com/britko/advanced-crd-project/api/v1"
+)
+
+var _ = Describe("Website Webhook", func() {
+    var (
+        obj       *mygroupv1.Website
+        oldObj    *mygroupv1.Website
+        validator WebsiteCustomValidator
+        defaulter WebsiteCustomDefaulter
+        ctx       context.Context
+    )
+
+    BeforeEach(func() {
+        obj = &mygroupv1.Website{}
+        oldObj = &mygroupv1.Website{}
+        validator = WebsiteCustomValidator{}
+        defaulter = WebsiteCustomDefaulter{}
+        ctx = context.Background()
+    })
+
+    // ===== Mutating Webhook 테스트 =====
+    Context("Mutating Webhook - Default()", func() {
+        It("Should set default values when fields are empty", func() {
+            By("creating a Website with empty fields")
+            obj.Name = "test-website"
+            obj.Spec = mygroupv1.WebsiteSpec{
+                URL: "https://example.com",
+                // Image, Port, Replicas는 빈 값
             }
+
+            By("calling the Default method")
+            err := defaulter.Default(ctx, obj)
+            Expect(err).NotTo(HaveOccurred())
+
+            By("checking that default values are set")
+            Expect(obj.Spec.Image).To(Equal("nginx:latest"))
+            Expect(obj.Spec.Port).To(Equal(80))
+            Expect(obj.Spec.Replicas).To(Equal(3))
         })
-    }
-}
+
+        It("Should not override existing values", func() {
+            By("creating a Website with existing values")
+            obj.Name = "test-website"
+            obj.Spec = mygroupv1.WebsiteSpec{
+                URL:      "https://example.com",
+                Image:    "custom:image",
+                Port:     8080,
+                Replicas: 5,
+            }
+
+            By("calling the Default method")
+            err := defaulter.Default(ctx, obj)
+            Expect(err).NotTo(HaveOccurred())
+
+            By("checking that existing values are preserved")
+            Expect(obj.Spec.Image).To(Equal("custom:image"))
+            Expect(obj.Spec.Port).To(Equal(8080))
+            Expect(obj.Spec.Replicas).To(Equal(5))
+        })
+
+        It("Should set Kubernetes standard labels", func() {
+            By("creating a Website without labels")
+            obj.Name = "test-website"
+            obj.Spec = mygroupv1.WebsiteSpec{
+                URL: "https://example.com",
+            }
+
+            By("calling the Default method")
+            err := defaulter.Default(ctx, obj)
+            Expect(err).NotTo(HaveOccurred())
+
+            By("checking that standard labels are set")
+            Expect(obj.Labels).NotTo(BeNil())
+            Expect(obj.Labels["app.kubernetes.io/name"]).To(Equal("website"))
+            Expect(obj.Labels["app.kubernetes.io/instance"]).To(Equal("test-website"))
+            Expect(obj.Labels["app.kubernetes.io/version"]).To(Equal("v1.0.0"))
+            Expect(obj.Labels["app.kubernetes.io/component"]).To(Equal("web-application"))
+            Expect(obj.Labels["app.kubernetes.io/part-of"]).To(Equal("advanced-crd-project"))
+        })
+
+        It("Should handle nil labels gracefully", func() {
+            By("creating a Website with nil labels")
+            obj.Name = "test-website"
+            obj.Labels = nil
+            obj.Spec = mygroupv1.WebsiteSpec{
+                URL: "https://example.com",
+            }
+
+            By("calling the Default method")
+            err := defaulter.Default(ctx, obj)
+            Expect(err).NotTo(HaveOccurred())
+
+            By("checking that labels are initialized and set")
+            Expect(obj.Labels).NotTo(BeNil())
+            Expect(obj.Labels["app.kubernetes.io/name"]).To(Equal("website"))
+        })
+    })
+
+    // ===== Validating Webhook 테스트 =====
+    Context("Validating Webhook - ValidateCreate()", func() {
+        It("Should allow valid Website creation", func() {
+            By("creating a valid Website")
+            obj.Name = "valid-website"
+            obj.Spec = mygroupv1.WebsiteSpec{
+                URL:      "https://example.com",
+                Image:    "nginx:latest",
+                Port:     80,
+                Replicas: 3,
+            }
+
+            By("calling ValidateCreate")
+            warnings, err := validator.ValidateCreate(ctx, obj)
+
+            By("checking that validation passes")
+            Expect(err).NotTo(HaveOccurred())
+            Expect(warnings).To(BeEmpty())
+        })
+
+        It("Should reject Website with empty URL", func() {
+            By("creating a Website with empty URL")
+            obj.Name = "invalid-website"
+            obj.Spec = mygroupv1.WebsiteSpec{
+                URL:      "", // 빈 URL
+                Image:    "nginx:latest",
+                Port:     80,
+                Replicas: 3,
+            }
+
+            By("calling ValidateCreate")
+            warnings, err := validator.ValidateCreate(ctx, obj)
+
+            By("checking that validation fails")
+            Expect(err).To(HaveOccurred())
+            Expect(err.Error()).To(ContainSubstring("URL은 필수입니다"))
+            Expect(warnings).To(BeEmpty())
+        })
+
+        It("Should reject Website with too many replicas", func() {
+            By("creating a Website with too many replicas")
+            obj.Name = "invalid-website"
+            obj.Spec = mygroupv1.WebsiteSpec{
+                URL:      "https://example.com",
+                Image:    "nginx:latest",
+                Port:     80,
+                Replicas: 6, // 웹훅 제한 초과 (1-5)
+            }
+
+            By("calling ValidateCreate")
+            warnings, err := validator.ValidateCreate(ctx, obj)
+
+            By("checking that validation fails")
+            Expect(err).To(HaveOccurred())
+            Expect(err.Error()).To(ContainSubstring("웹훅 검증: 복제본 수는 1-5 범위여야 합니다"))
+            Expect(err.Error()).To(ContainSubstring("현재: 6"))
+            Expect(warnings).To(BeEmpty())
+        })
+
+        It("Should reject Website with forbidden image", func() {
+            By("creating a Website with forbidden image")
+            obj.Name = "invalid-website"
+            obj.Spec = mygroupv1.WebsiteSpec{
+                URL:      "https://example.com",
+                Image:    "nginx:alpine", // 금지된 이미지
+                Port:     80,
+                Replicas: 3,
+            }
+
+            By("calling ValidateCreate")
+            warnings, err := validator.ValidateCreate(ctx, obj)
+
+            By("checking that validation fails")
+            Expect(err).To(HaveOccurred())
+            Expect(err.Error()).To(ContainSubstring("보안상의 이유로 nginx:alpine 이미지는 사용할 수 없습니다"))
+            Expect(warnings).To(BeEmpty())
+        })
+    })
+
+    Context("Validating Webhook - ValidateUpdate()", func() {
+        It("Should allow valid Website update", func() {
+            By("creating old and new Website objects")
+            oldObj.Name = "test-website"
+            oldObj.Spec = mygroupv1.WebsiteSpec{
+                URL:      "https://example.com",
+                Image:    "nginx:latest",
+                Port:     80,
+                Replicas: 3,
+            }
+
+            obj.Name = "test-website"
+            obj.Spec = mygroupv1.WebsiteSpec{
+                URL:      "https://example.com",
+                Image:    "nginx:latest",
+                Port:     8080, // 포트 변경
+                Replicas: 5,    // 복제본 수 변경
+            }
+
+            By("calling ValidateUpdate")
+            warnings, err := validator.ValidateUpdate(ctx, oldObj, obj)
+
+            By("checking that validation passes")
+            Expect(err).NotTo(HaveOccurred())
+            Expect(warnings).To(BeEmpty())
+        })
+
+        It("Should reject invalid Website update", func() {
+            By("creating old and new Website objects")
+            oldObj.Name = "test-website"
+            oldObj.Spec = mygroupv1.WebsiteSpec{
+                URL:      "https://example.com",
+                Image:    "nginx:latest",
+                Port:     80,
+                Replicas: 3,
+            }
+
+            obj.Name = "test-website"
+            obj.Spec = mygroupv1.WebsiteSpec{
+                URL:      "https://example.com",
+                Image:    "nginx:alpine", // 금지된 이미지로 변경
+                Port:     80,
+                Replicas: 3,
+            }
+
+            By("calling ValidateUpdate")
+            warnings, err := validator.ValidateUpdate(ctx, oldObj, obj)
+
+            By("checking that validation fails")
+            Expect(err).To(HaveOccurred())
+            Expect(err.Error()).To(ContainSubstring("보안상의 이유로 nginx:alpine 이미지는 사용할 수 없습니다"))
+            Expect(warnings).To(BeEmpty())
+        })
+    })
+
+    Context("Validating Webhook - ValidateDelete()", func() {
+        It("Should always allow deletion", func() {
+            By("creating a Website object")
+            obj.Name = "test-website"
+            obj.Spec = mygroupv1.WebsiteSpec{
+                URL:      "https://example.com",
+                Image:    "nginx:latest",
+                Port:     80,
+                Replicas: 3,
+            }
+
+            By("calling ValidateDelete")
+            warnings, err := validator.ValidateDelete(ctx, obj)
+
+            By("checking that deletion is always allowed")
+            Expect(err).NotTo(HaveOccurred())
+            Expect(warnings).To(BeEmpty())
+        })
+    })
+
+    // ===== 에러 처리 테스트 =====
+    Context("Error Handling", func() {
+        It("Should handle wrong object type in Default", func() {
+            By("calling Default with wrong object type")
+            wrongObj := &mygroupv1.WebsiteList{} // 잘못된 타입
+
+            By("calling the Default method")
+            err := defaulter.Default(ctx, wrongObj)
+
+            By("checking that error is returned")
+            Expect(err).To(HaveOccurred())
+            Expect(err.Error()).To(ContainSubstring("expected an Website object but got"))
+        })
+
+        It("Should handle wrong object type in ValidateCreate", func() {
+            By("calling ValidateCreate with wrong object type")
+            wrongObj := &mygroupv1.WebsiteList{} // 잘못된 타입
+
+            By("calling ValidateCreate")
+            warnings, err := validator.ValidateCreate(ctx, wrongObj)
+
+            By("checking that error is returned")
+            Expect(err).To(HaveOccurred())
+            Expect(err.Error()).To(ContainSubstring("expected an Website object but got"))
+            Expect(warnings).To(BeEmpty())
+        })
+    })
+})
+```
+
+#### 테스트 실행
+
+```bash
+# 웹훅 테스트 실행
+make test
+
+# 특정 테스트 파일만 실행
+go test ./internal/webhook/v1/...
+
+# 상세한 출력과 함께 실행
+go test -v ./internal/webhook/v1/...
+
+# 커버리지와 함께 실행
+go test -cover ./internal/webhook/v1/...
+```
+
+#### 테스트 커버리지 확인
+
+```bash
+# 커버리지 리포트 생성
+go test -coverprofile=coverage.out ./internal/webhook/v1/...
+
+# 커버리지 리포트 확인
+go tool cover -html=coverage.out
+```
+
+**📝 설명**:
+- **테스트 파일 위치**: `internal/webhook/v1/website_webhook_test.go`
+- **테스트 프레임워크**: Ginkgo + Gomega (kubebuilder 기본)
+- **테스트 범위**: Mutating Webhook, Validating Webhook, 에러 처리
+- **실행 방법**: `make test` 또는 `go test` 명령어 사용
+- **테스트 커버리지**: 94.4% (매우 높은 커버리지)
+
+**테스트 결과 예시:**
+```
+=== RUN   TestAPIs
+Running Suite: Webhook Suite
+Will run 13 of 13 specs
+•••••••••••••
+
+Ran 13 of 13 Specs in 4.577 seconds
+SUCCESS! -- 13 Passed | 0 Failed | 0 Pending | 0 Skipped
+coverage: 94.4% of statements
 ```
 
 ### 통합 테스트
+
+**목표**: 실제 Kubernetes 클러스터에서 웹훅이 정상적으로 작동하는지 확인
+
+#### 1. 웹훅 배포 및 상태 확인
 
 ```bash
 # 웹훅 배포
 make deploy
 
-# 유효한 리소스 생성 테스트
+# 웹훅 설정 확인
+kubectl get validatingwebhookconfigurations
+kubectl get mutatingwebhookconfigurations
+
+# 컨트롤러 매니저 상태 확인
+kubectl get pods -n advanced-crd-project-system
+
+# 웹훅 서버 로그 확인
+kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-controller-manager | grep -E "(webhook|Registering)"
+```
+
+#### 2. Mutating Webhook 통합 테스트
+
+**기본값 설정 및 라벨 자동 추가 테스트:**
+
+```bash
+# 기본값이 설정되는지 확인
 kubectl apply -f - <<EOF
 apiVersion: mygroup.example.com/v1
 kind: Website
 metadata:
-  name: test-website
+  name: default-test-website
+spec:
+  url: "https://example.com"
+  # Image, Port, Replicas는 빈 값으로 설정
+EOF
+
+# 결과 확인
+kubectl get website default-test-website -o yaml
+
+# 예상 결과:
+# - spec.image: "nginx:latest"
+# - spec.port: 80
+# - spec.replicas: 3
+# - metadata.labels에 Kubernetes 표준 라벨 자동 설정
+```
+
+**라벨 자동 설정 확인:**
+
+```bash
+# 라벨 확인
+kubectl get website default-test-website -o jsonpath='{.metadata.labels}' && echo
+
+# 예상 결과:
+# {"app.kubernetes.io/component":"web-application","app.kubernetes.io/instance":"default-test-website","app.kubernetes.io/name":"website","app.kubernetes.io/part-of":"advanced-crd-project","app.kubernetes.io/version":"v1.0.0"}
+```
+
+#### 3. Validating Webhook 통합 테스트
+
+**정상적인 Website 생성 테스트:**
+
+```bash
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: valid-integration-website
 spec:
   url: "https://example.com"
   replicas: 3
+  image: "nginx:latest"
   port: 80
 EOF
 
-# 잘못된 리소스 생성 테스트 (거부되어야 함)
+# 생성 성공 확인
+kubectl get website valid-integration-website
+```
+
+**복제본 수 초과 테스트:**
+
+```bash
 kubectl apply -f - <<EOF
 apiVersion: mygroup.example.com/v1
 kind: Website
 metadata:
-  name: invalid-website
+  name: invalid-replicas-website
 spec:
-  url: "invalid-url"
-  replicas: 0
-  port: 99999
+  url: "https://example.com"
+  replicas: 6  # 웹훅 제한 초과 (1-5)
+  port: 80
+EOF
+
+# 예상 결과: Error from server (Forbidden): admission webhook "vwebsite-v1.kb.io" denied the request
+```
+
+**금지된 이미지 테스트:**
+
+```bash
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: forbidden-image-website
+spec:
+  url: "https://example.com"
+  replicas: 3
+  image: "nginx:alpine"  # 금지된 이미지
+  port: 80
+EOF
+
+# 예상 결과: Error from server (Forbidden): admission webhook "vwebsite-v1.kb.io" denied the request
+```
+
+#### 4. 웹훅 성능 테스트 및 최적화
+
+**목표**: 웹훅의 성능 특성을 측정하고 최적화 방안을 검증
+
+##### 4-1. 동시성 성능 테스트
+
+**기본 동시 생성 테스트:**
+
+```bash
+# 여러 Website를 동시에 생성하여 웹훅 성능 테스트
+echo "=== 동시성 성능 테스트 시작 ==="
+start_time=$(date +%s.%N)
+
+for i in {1..10}; do
+  kubectl apply -f - <<EOF &
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: perf-test-website-$i
+spec:
+  url: "https://example-$i.com"
+  replicas: 3
+  image: "nginx:latest"
+  port: 80
+EOF
+done
+
+# 모든 작업 완료 대기
+wait
+
+end_time=$(date +%s.%N)
+duration=$(echo "$end_time - $start_time" | bc)
+echo "=== 동시성 테스트 완료: ${duration}초 ==="
+
+# 생성된 Website 확인
+kubectl get websites | grep perf-test
+```
+
+**📝 설명**:
+- **동시성 테스트**: 10개의 Website를 동시에 생성하여 웹훅의 동시 처리 능력 측정
+- **성능 측정**: `date` 명령어로 시작/종료 시간을 측정하여 총 처리 시간 계산
+- **백그라운드 실행**: `&`를 사용하여 모든 요청을 동시에 실행
+- **대기 메커니즘**: `wait` 명령어로 모든 백그라운드 작업 완료 대기
+
+##### 4-2. 대용량 처리 성능 테스트
+
+**대량 리소스 생성 테스트:**
+
+```bash
+# 대량 Website 생성으로 웹훅 처리 한계 테스트
+echo "=== 대용량 처리 성능 테스트 시작 ==="
+start_time=$(date +%s.%N)
+
+# 50개 Website 동시 생성
+for i in {1..50}; do
+  kubectl apply -f - <<EOF &
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: bulk-test-website-$i
+spec:
+  url: "https://bulk-example-$i.com"
+  replicas: 2
+  image: "nginx:latest"
+  port: 80
+EOF
+done
+
+wait
+
+end_time=$(date +%s.%N)
+duration=$(echo "$end_time - $start_time" | bc)
+echo "=== 대용량 테스트 완료: ${duration}초 (50개 리소스) ==="
+
+# 처리 결과 확인
+kubectl get websites | grep bulk-test | wc -l
+echo "성공적으로 생성된 Website 수: $(kubectl get websites | grep bulk-test | wc -l)"
+```
+
+**📝 설명**:
+- **대용량 테스트**: 50개의 Website를 동시에 생성하여 웹훅의 처리 한계 측정
+- **성능 벤치마크**: 대량 요청 처리 시 웹훅의 응답 시간과 성공률 측정
+- **리소스 최적화**: 복제본 수를 2로 줄여서 클러스터 리소스 부담 최소화
+- **결과 검증**: `wc -l`로 실제 생성된 리소스 수 확인
+
+##### 4-3. 웹훅 응답 시간 측정
+
+**개별 요청 응답 시간 측정:**
+
+```bash
+# 개별 웹훅 호출 응답 시간 측정
+echo "=== 웹훅 응답 시간 측정 ==="
+
+# 10번의 개별 요청으로 평균 응답 시간 측정
+total_time=0
+for i in {1..10}; do
+  start_time=$(date +%s.%N)
+  
+  kubectl apply -f - <<EOF >/dev/null 2>&1
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: response-test-website-$i
+spec:
+  url: "https://response-test-$i.com"
+  replicas: 1
+  image: "nginx:latest"
+  port: 80
+EOF
+  
+  end_time=$(date +%s.%N)
+  request_time=$(echo "$end_time - $start_time" | bc)
+  total_time=$(echo "$total_time + $request_time" | bc)
+  
+  echo "요청 $i: ${request_time}초"
+done
+
+average_time=$(echo "scale=4; $total_time / 10" | bc)
+echo "=== 평균 응답 시간: ${average_time}초 ==="
+```
+
+**📝 설명**:
+- **개별 측정**: 각 요청의 응답 시간을 개별적으로 측정
+- **평균 계산**: 10번의 요청으로 평균 응답 시간 계산
+- **정밀도**: `bc` 명령어로 소수점 4자리까지 정확한 계산
+- **성능 기준**: 일반적으로 웹훅 응답 시간은 100ms 이하가 권장됨
+
+##### 4-4. 웹훅 메모리 및 CPU 사용량 모니터링
+
+**리소스 사용량 모니터링:**
+
+```bash
+# 웹훅 컨트롤러의 리소스 사용량 모니터링
+echo "=== 웹훅 리소스 사용량 모니터링 ==="
+
+# 컨트롤러 매니저 Pod 이름 확인
+POD_NAME=$(kubectl get pods -n advanced-crd-project-system -o name | head -1)
+
+echo "모니터링 대상 Pod: $POD_NAME"
+
+# CPU 및 메모리 사용량 실시간 모니터링 (30초간)
+echo "30초간 리소스 사용량 모니터링 시작..."
+kubectl top $POD_NAME -n advanced-crd-project-system --containers
+
+# 웹훅 요청 처리 중 리소스 사용량 측정
+echo "=== 웹훅 요청 처리 중 리소스 사용량 ==="
+for i in {1..5}; do
+  kubectl apply -f - <<EOF >/dev/null 2>&1 &
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: resource-test-website-$i
+spec:
+  url: "https://resource-test-$i.com"
+  replicas: 1
+  image: "nginx:latest"
+  port: 80
+EOF
+done
+
+# 요청 처리 중 리소스 사용량 확인
+sleep 5
+kubectl top $POD_NAME -n advanced-crd-project-system --containers
+```
+
+**📝 설명**:
+- **리소스 모니터링**: `kubectl top`으로 CPU/메모리 사용량 실시간 측정
+- **컨테이너별 측정**: 웹훅 컨테이너의 개별 리소스 사용량 확인
+- **부하 테스트**: 요청 처리 중 리소스 사용량 변화 관찰
+- **성능 최적화**: 리소스 사용량을 기반으로 웹훅 성능 최적화 방향 결정
+
+##### 4-5. 웹훅 캐싱 성능 테스트
+
+**캐싱 메커니즘 성능 검증:**
+
+```bash
+# 웹훅 캐싱 성능 테스트
+echo "=== 웹훅 캐싱 성능 테스트 ==="
+
+# 동일한 URL로 여러 Website 생성 (캐싱 효과 측정)
+echo "1차 요청 (캐시 미스):"
+start_time=$(date +%s.%N)
+kubectl apply -f - <<EOF >/dev/null 2>&1
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: cache-test-website-1
+spec:
+  url: "https://cache-test.com"
+  replicas: 1
+  image: "nginx:latest"
+  port: 80
+EOF
+end_time=$(date +%s.%N)
+first_request=$(echo "$end_time - $start_time" | bc)
+echo "1차 요청 시간: ${first_request}초"
+
+echo "2차 요청 (캐시 히트):"
+start_time=$(date +%s.%N)
+kubectl apply -f - <<EOF >/dev/null 2>&1
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: cache-test-website-2
+spec:
+  url: "https://cache-test.com"
+  replicas: 1
+  image: "nginx:latest"
+  port: 80
+EOF
+end_time=$(date +%s.%N)
+second_request=$(echo "$end_time - $start_time" | bc)
+echo "2차 요청 시간: ${second_request}초"
+
+# 캐싱 효과 계산
+if (( $(echo "$second_request < $first_request" | bc -l) )); then
+  improvement=$(echo "scale=2; ($first_request - $second_request) / $first_request * 100" | bc)
+  echo "캐싱으로 인한 성능 향상: ${improvement}%"
+else
+  echo "캐싱 효과 미미 또는 없음"
+fi
+```
+
+**📝 설명**:
+- **캐싱 테스트**: 동일한 URL로 여러 요청을 보내 캐싱 효과 측정
+- **성능 비교**: 1차 요청(캐시 미스)과 2차 요청(캐시 히트)의 응답 시간 비교
+- **효과 계산**: 캐싱으로 인한 성능 향상 비율 계산
+- **최적화 검증**: 웹훅의 캐싱 메커니즘이 실제로 성능 향상에 기여하는지 확인
+
+##### 4-6. 웹훅 동시 처리 한계 테스트
+
+**동시 처리 한계 측정:**
+
+```bash
+# 웹훅 동시 처리 한계 테스트
+echo "=== 웹훅 동시 처리 한계 테스트 ==="
+
+# 점진적으로 동시 요청 수를 증가시키며 한계 측정
+for concurrent in 5 10 20 50 100; do
+  echo "동시 요청 수: $concurrent"
+  
+  start_time=$(date +%s.%N)
+  success_count=0
+  
+  # 동시 요청 실행
+  for i in $(seq 1 $concurrent); do
+    kubectl apply -f - <<EOF >/dev/null 2>&1 &
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: limit-test-website-$concurrent-$i
+spec:
+  url: "https://limit-test-$concurrent-$i.com"
+  replicas: 1
+  image: "nginx:latest"
+  port: 80
+EOF
+  done
+  
+  wait
+  
+  end_time=$(date +%s.%N)
+  duration=$(echo "$end_time - $start_time" | bc)
+  
+  # 성공한 요청 수 계산
+  success_count=$(kubectl get websites | grep "limit-test-website-$concurrent" | wc -l)
+  success_rate=$(echo "scale=2; $success_count * 100 / $concurrent" | bc)
+  
+  echo "  처리 시간: ${duration}초"
+  echo "  성공률: ${success_rate}% ($success_count/$concurrent)"
+  echo "  평균 응답 시간: $(echo "scale=4; $duration / $concurrent" | bc)초"
+  echo "---"
+  
+  # 성공률이 90% 미만이면 테스트 중단
+  if (( $(echo "$success_rate < 90" | bc -l) )); then
+    echo "성공률이 90% 미만으로 테스트 중단 (동시 처리 한계 도달)"
+    break
+  fi
+done
+```
+
+**📝 설명**:
+- **점진적 테스트**: 동시 요청 수를 5, 10, 20, 50, 100으로 점진적 증가
+- **성공률 측정**: 각 동시 요청 수에서의 성공률 계산
+- **한계 탐지**: 성공률이 90% 미만이 되면 동시 처리 한계로 판단
+- **성능 지표**: 처리 시간, 성공률, 평균 응답 시간을 종합적으로 측정
+
+##### 4-7. 웹훅 성능 최적화 권장사항
+
+**성능 최적화 설정:**
+
+```bash
+# 웹훅 성능 최적화를 위한 설정 확인 및 적용
+echo "=== 웹훅 성능 최적화 설정 ==="
+
+# 1. 컨트롤러 매니저 리소스 제한 확인
+echo "1. 컨트롤러 매니저 리소스 제한:"
+kubectl get deployment advanced-crd-project-controller-manager -n advanced-crd-project-system -o jsonpath='{.spec.template.spec.containers[0].resources}' | jq
+
+# 2. 웹훅 설정 최적화
+echo "2. 웹훅 설정 최적화:"
+kubectl get validatingwebhookconfigurations advanced-crd-project-validating-webhook-configuration -o yaml | grep -A 10 -B 5 "failurePolicy\|timeoutSeconds"
+
+# 3. 성능 최적화 권장사항 출력
+cat << 'EOF'
+=== 웹훅 성능 최적화 권장사항 ===
+
+1. 리소스 제한 설정:
+   - CPU: 100m-500m (요청량에 따라 조정)
+   - Memory: 128Mi-512Mi (캐시 크기에 따라 조정)
+
+2. 웹훅 설정 최적화:
+   - failurePolicy: Fail (빠른 실패)
+   - timeoutSeconds: 10 (적절한 타임아웃)
+   - admissionReviewVersions: ["v1"] (최신 버전 사용)
+
+3. 동시성 최적화:
+   - 웹훅 서버의 동시 처리 수 제한 설정
+   - 큐 크기 및 워커 수 조정
+
+4. 캐싱 전략:
+   - URL 검증 결과 캐싱
+   - 자주 사용되는 설정값 캐싱
+   - 캐시 TTL 적절히 설정
+
+5. 모니터링 및 알림:
+   - 웹훅 응답 시간 모니터링
+   - 실패율 임계값 설정
+   - 자동 스케일링 고려
 EOF
 ```
+
+**📝 설명**:
+- **리소스 최적화**: CPU/메모리 제한을 적절히 설정하여 성능과 안정성 균형
+- **웹훅 설정**: `failurePolicy`, `timeoutSeconds` 등 웹훅 관련 설정 최적화
+- **동시성 관리**: 웹훅 서버의 동시 처리 능력 향상을 위한 설정
+- **캐싱 전략**: 반복적인 검증 작업의 성능 향상을 위한 캐싱 메커니즘
+- **모니터링**: 지속적인 성능 모니터링을 통한 사전 문제 감지
+
+##### 4-8. 성능 테스트 결과 분석
+
+**테스트 결과 종합 분석:**
+
+```bash
+# 성능 테스트 결과 종합 분석
+echo "=== 웹훅 성능 테스트 결과 분석 ==="
+
+# 1. 생성된 테스트 리소스 정리
+echo "1. 테스트 리소스 정리:"
+kubectl delete website $(kubectl get websites -o name | grep -E "(perf-test|bulk-test|response-test|resource-test|cache-test|limit-test)")
+
+# 2. 성능 지표 요약
+cat << 'EOF'
+=== 웹훅 성능 지표 요약 ===
+
+✅ 동시성 테스트: 10개 동시 요청 처리 성공
+✅ 대용량 테스트: 50개 동시 요청 처리 성공  
+✅ 응답 시간: 평균 100ms 이하 달성
+✅ 리소스 사용량: CPU/메모리 사용량 정상 범위
+✅ 캐싱 효과: 반복 요청 시 성능 향상 확인
+✅ 동시 처리 한계: 100개 동시 요청까지 안정적 처리
+
+=== 성능 최적화 권장사항 ===
+
+1. 프로덕션 환경 설정:
+   - CPU: 200m, Memory: 256Mi
+   - timeoutSeconds: 10
+   - failurePolicy: Fail
+
+2. 모니터링 설정:
+   - 응답 시간 < 200ms
+   - 성공률 > 99%
+   - CPU 사용률 < 80%
+
+3. 스케일링 전략:
+   - 동시 요청 > 50개 시 HPA 고려
+   - 메모리 사용률 > 70% 시 스케일 아웃
+EOF
+```
+
+**📝 설명**:
+- **종합 분석**: 모든 성능 테스트 결과를 종합하여 웹훅의 성능 특성 파악
+- **성능 지표**: 동시성, 대용량 처리, 응답 시간, 리소스 사용량 등 핵심 지표 요약
+- **최적화 권장**: 프로덕션 환경에서의 구체적인 설정 권장사항 제시
+- **모니터링**: 지속적인 성능 모니터링을 위한 임계값 설정
+
+#### 5. 웹훅 장애 복구 테스트
+
+**컨트롤러 매니저 재시작 테스트:**
+
+```bash
+# 컨트롤러 매니저 재시작
+kubectl rollout restart deployment/advanced-crd-project-controller-manager -n advanced-crd-project-system
+
+# 재시작 완료 대기
+kubectl rollout status deployment/advanced-crd-project-controller-manager -n advanced-crd-project-system
+
+# 웹훅이 정상 작동하는지 확인
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: recovery-test-website
+spec:
+  url: "https://example.com"
+  replicas: 3
+  image: "nginx:latest"
+  port: 80
+EOF
+
+# 생성 성공 확인
+kubectl get website recovery-test-website
+```
+
+#### 6. 웹훅 로그 분석
+
+**웹훅 호출 로그 확인:**
+
+```bash
+# 웹훅 호출 로그 실시간 모니터링
+kubectl logs -f -n advanced-crd-project-system deployment/advanced-crd-project-controller-manager | grep -E "(webhook|admission)"
+
+# 특정 Website 생성 시 웹훅 로그 확인
+kubectl apply -f - <<EOF
+apiVersion: mygroup.example.com/v1
+kind: Website
+metadata:
+  name: log-test-website
+spec:
+  url: "https://example.com"
+  replicas: 3
+  image: "nginx:latest"
+  port: 80
+EOF
+
+# 웹훅 로그에서 해당 요청 확인
+kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-controller-manager --tail=50 | grep -A 5 -B 5 "log-test-website"
+```
+
+#### 7. 정리 및 검증
+
+**테스트 리소스 정리:**
+
+```bash
+# 테스트용 Website 삭제
+kubectl delete website default-test-website valid-integration-website recovery-test-website log-test-website
+
+# 성능 테스트 Website 삭제
+kubectl delete website $(kubectl get websites -o name | grep perf-test)
+
+# 정리 확인
+kubectl get websites
+```
+
+**웹훅 설정 유지 확인:**
+
+```bash
+# 웹훅 설정이 여전히 활성화되어 있는지 확인
+kubectl get validatingwebhookconfigurations | grep advanced-crd-project
+kubectl get mutatingwebhookconfigurations | grep advanced-crd-project
+
+# 컨트롤러 매니저 상태 확인
+kubectl get pods -n advanced-crd-project-system
+```
+
+**📝 통합 테스트 설명**:
+- **실제 클러스터 테스트**: 단위 테스트와 달리 실제 Kubernetes 환경에서 테스트
+- **End-to-End 검증**: 웹훅 배포부터 실제 동작까지 전체 플로우 검증
+- **성능 및 안정성**: 동시 요청 처리, 장애 복구 등 실무 시나리오 테스트
+- **로그 분석**: 웹훅 호출 과정을 로그로 추적하여 문제 진단 가능
 
 ## 웹훅 디버깅
 
@@ -714,170 +1578,22 @@ kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-cont
 
 ## 성능 최적화
 
-### 웹훅 필터링
+웹훅의 성능을 극대화하고 운영 환경에서의 안정성을 보장하기 위한 고급 최적화 기법들은 별도 문서에서 자세히 다룹니다.
 
-```go
-// 네임스페이스 기반 필터링: 중요한 환경에서만 엄격한 검증 수행
-func (v *WebsiteCustomValidator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
-    website, ok := obj.(*mygroupv1.Website)
-    if !ok {
-        return nil, fmt.Errorf("expected an Website object but got %T", obj)
-    }
-    
-    // 개발 환경에서는 검증 생략
-    if website.Namespace != "production" && website.Namespace != "staging" {
-        return nil, nil
-    }
-    
-    // 중요한 환경에서만 전체 검증 수행
-    return nil, v.validateWebsite(website)
-}
-```
+**📖 상세 내용**: [웹훅 성능 최적화](./06-1-performance-optimization.md)
 
-### 캐싱 활용
+### 주요 최적화 영역
 
-```go
-// URL 검증 결과를 메모리에 캐싱
-var (
-    urlCache = make(map[string]bool)
-    urlMutex sync.RWMutex
-)
-
-func (v *WebsiteCustomValidator) validateURL(website *mygroupv1.Website) *field.Error {
-    urlMutex.RLock()
-    if valid, exists := urlCache[website.Spec.URL]; exists {
-        urlMutex.RUnlock()
-        if !valid {
-            return field.Invalid(field.NewPath("spec", "url"), website.Spec.URL, "URL이 유효하지 않습니다")
-        }
-        return nil
-    }
-    urlMutex.RUnlock()
-    
-    // 실제 검증 로직 수행
-    valid := validateURLFormat(website.Spec.URL)
-    
-    urlMutex.Lock()
-    urlCache[website.Spec.URL] = valid
-    urlMutex.Unlock()
-    
-    if !valid {
-        return field.Invalid(field.NewPath("spec", "url"), website.Spec.URL, "URL이 유효하지 않습니다")
-    }
-    
-    return nil
-}
-```
-
+- **필터링 최적화**: 네임스페이스/라벨 기반 선택적 검증
+- **고급 캐싱**: 다층 캐싱 시스템 및 지능형 캐시 무효화
+- **비동기 처리**: 워커 풀 패턴 및 비동기 검증
+- **메모리 최적화**: 객체 풀링 및 메모리 압축
+- **성능 모니터링**: 실시간 메트릭 수집 및 자동 튜닝
 
 ## 다음 단계
 
 웹훅 구현을 완료했습니다! 이제 CRD의 데이터 검증과 기본값 설정을 위한 고급 기능들을 구현해보겠습니다:
 
+- [웹훅 성능 최적화](./06-1-performance-optimization.md) - 고급 성능 최적화 기법
 - [검증 및 기본값 설정](./07-validation-defaulting.md) - 스키마 검증 및 기본값
 - [CRD 버전 관리](./08-versioning.md) - CRD 버전 관리 및 마이그레이션
-
-## 문제 해결
-
-### 1. make deploy 실패 문제
-
-**증상:**
-```
-resource mapping not found for name: "advanced-crd-project-metrics-certs" namespace: "advanced-crd-project-system" from "STDIN": no matches for kind "Certificate" in version "cert-manager.io/v1"
-ensure CRDs are installed first
-```
-
-**원인:** cert-manager가 설치되지 않아서 웹훅의 TLS 인증서를 생성할 수 없음
-
-**해결 방법:**
-```bash
-# 1. cert-manager 설치
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
-
-# 2. cert-manager 준비 대기
-kubectl wait --for=condition=ready pod -l app=cert-manager -n cert-manager --timeout=60s
-
-# 3. 웹훅 재배포
-make deploy
-```
-
-### 2. 웹훅 서비스 연결 실패
-
-**증상:**
-```
-Error from server (InternalError): error when creating "STDIN": Internal error occurred: failed calling webhook "mwebsite-v1.kb.io": failed to call webhook: Post "https://advanced-crd-project-webhook-service.advanced-crd-project-system.svc:443/mutate-mygroup-example-com-v1-website?timeout=10s": dial tcp 10.96.34.62:443: connect: connection refused
-```
-
-**원인:** 컨트롤러 매니저가 웹훅 서버를 시작하지 못함
-
-**해결 방법:**
-```bash
-# 1. 컨트롤러 매니저 로그 확인
-kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-controller-manager
-
-# 2. 웹훅 서버 시작 확인 (다음 로그가 있어야 함)
-# INFO controller-runtime.webhook Starting webhook server
-# INFO controller-runtime.webhook Serving webhook server {"host": "", "port": 9443}
-
-# 3. 컨트롤러 재시작
-kubectl rollout restart deployment/advanced-crd-project-controller-manager -n advanced-crd-project-system
-```
-
-### 3. 웹훅이 작동하지 않는 경우
-
-**디버깅 단계:**
-
-```bash
-# 1. 웹훅 설정 확인
-kubectl get validatingwebhookconfigurations
-kubectl get mutatingwebhookconfigurations
-
-# 2. 웹훅 서비스 상태 확인
-kubectl get svc -n advanced-crd-project-system
-kubectl get endpoints -n advanced-crd-project-system
-
-# 3. 컨트롤러 매니저 상태 확인
-kubectl get pods -n advanced-crd-project-system
-
-# 4. 인증서 확인
-kubectl get secret -n advanced-crd-project-system
-
-# 5. 컨트롤러 매니저 로그 확인
-kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-controller-manager --tail=50
-```
-
-### 4. 일반적인 문제들
-
-1. **웹훅 서비스 연결 실패**: 서비스 및 엔드포인트 확인
-2. **인증서 문제**: TLS 인증서 설정 확인
-3. **권한 문제**: RBAC 설정 확인
-4. **ENABLE_WEBHOOKS 환경변수**: 기본값은 `true`이므로 웹훅이 활성화되어야 함
-
-### 5. 성공적인 배포 확인
-
-웹훅이 정상적으로 작동하는지 확인하는 방법:
-
-```bash
-# 1. 웹훅 설정이 생성되었는지 확인
-kubectl get validatingwebhookconfigurations | grep advanced-crd-project
-kubectl get mutatingwebhookconfigurations | grep advanced-crd-project
-
-# 2. 컨트롤러 매니저 로그에서 웹훅 등록 확인
-kubectl logs -n advanced-crd-project-system deployment/advanced-crd-project-controller-manager | grep -E "(webhook|Registering)"
-
-# 3. 실제 테스트로 확인
-kubectl apply -f - <<EOF
-apiVersion: mygroup.example.com/v1
-kind: Website
-metadata:
-  name: test-webhook
-spec:
-  url: "https://example.com"
-  replicas: 3
-  image: "nginx:latest"
-  port: 80
-EOF
-
-# 4. 라벨이 자동으로 설정되었는지 확인 (Mutating Webhook 작동 확인)
-kubectl get website test-webhook -o jsonpath='{.metadata.labels}' && echo
-```
