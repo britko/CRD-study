@@ -113,6 +113,66 @@ flowchart LR
 - 기본값 설정, 라벨 추가 등
 - 리소스 수정 후 검증
 
+## 웹훅 활성화
+
+먼저 기존 `advanced-crd-project`에 웹훅을 활성화합니다:
+
+```bash
+# advanced-crd-project 디렉터리로 이동
+cd advanced-crd-project
+
+# 웹훅 활성화
+kubebuilder create webhook \
+  --group mygroup \
+  --version v1 \
+  --kind Website \
+  --defaulting \
+  --programmatic-validation
+```
+
+### 명령어 옵션 설명
+
+| 옵션 | 설명 | 예시 |
+|------|------|------|
+| `--group` | API 그룹명 (기존 CRD와 동일) | `mygroup` |
+| `--version` | API 버전 (기존 CRD와 동일) | `v1` |
+| `--kind` | 리소스 종류 (기존 CRD와 동일) | `Website` |
+| `--defaulting` | Mutating Webhook 활성화 | 기본값 설정 기능 |
+| `--programmatic-validation` | Validating Webhook 활성화 | 프로그래밍 방식 검증 |
+
+### 생성되는 파일들
+
+이 명령어는 다음 파일들을 생성합니다:
+
+**1. 웹훅 구현 파일**
+- `internal/webhook/v1/website_webhook.go` - 웹훅 로직 구현 파일
+  - **Validating Webhook**: `ValidateCreate()`, `ValidateUpdate()`, `ValidateDelete()` 함수
+  - **Mutating Webhook**: `Default()` 함수 (기본값 설정)
+  - **웹훅 등록**: `SetupWebsiteWebhookWithManager()` 함수
+
+**2. 웹훅 매니페스트 파일들**
+- `config/webhook/` 디렉터리 생성
+  - `kustomization.yaml` - 웹훅 리소스 관리
+  - `manifests.yaml` - ValidatingWebhookConfiguration, MutatingWebhookConfiguration
+  - `service.yaml` - 웹훅 서비스 정의
+  - `certificate.yaml` - TLS 인증서 설정
+
+**3. 기존 파일 수정**
+- `main.go` - 웹훅 서버 설정 추가
+- `config/manager/manager.yaml` - 웹훅 포트 설정 추가
+
+### 웹훅 타입별 기능
+
+**Mutating Webhook (`--defaulting`)**
+- 리소스 생성/수정 **전**에 실행
+- 기본값 설정, 라벨/어노테이션 추가
+- 리소스 내용을 **변경**할 수 있음
+
+**Validating Webhook (`--programmatic-validation`)**
+- 리소스 생성/수정 **후**에 실행 (Mutating Webhook 이후)
+- 비즈니스 규칙 검증, 데이터 유효성 검사
+- 리소스 내용을 **변경하지 않고** 승인/거부만 결정
+
 ## 완성된 웹훅 코드
 
 먼저 완성된 웹훅 코드를 전체적으로 살펴보겠습니다:
@@ -224,71 +284,11 @@ func (v *WebsiteCustomValidator) validateWebsite(website *mygroupv1.Website) err
 }
 ```
 
-## 웹훅 구현 단계
+## 단계별 구현
 
 위의 완성된 코드를 단계별로 구현해보겠습니다:
 
-### 1단계: 웹훅 활성화
-
-기존 `advanced-crd-project`에 웹훅을 추가합니다:
-
-```bash
-# advanced-crd-project 디렉터리로 이동
-cd advanced-crd-project
-
-# 웹훅 활성화
-kubebuilder create webhook \
-  --group mygroup \
-  --version v1 \
-  --kind Website \
-  --defaulting \
-  --programmatic-validation
-```
-
-#### 명령어 옵션 설명
-
-| 옵션 | 설명 | 예시 |
-|------|------|------|
-| `--group` | API 그룹명 (기존 CRD와 동일) | `mygroup` |
-| `--version` | API 버전 (기존 CRD와 동일) | `v1` |
-| `--kind` | 리소스 종류 (기존 CRD와 동일) | `Website` |
-| `--defaulting` | Mutating Webhook 활성화 | 기본값 설정 기능 |
-| `--programmatic-validation` | Validating Webhook 활성화 | 프로그래밍 방식 검증 |
-
-#### 생성되는 파일들
-
-이 명령어는 다음 파일들을 생성합니다:
-
-**1. 웹훅 구현 파일**
-- `internal/webhook/v1/website_webhook.go` - 웹훅 로직 구현 파일
-  - **Validating Webhook**: `ValidateCreate()`, `ValidateUpdate()`, `ValidateDelete()` 함수
-  - **Mutating Webhook**: `Default()` 함수 (기본값 설정)
-  - **웹훅 등록**: `SetupWebsiteWebhookWithManager()` 함수
-
-**2. 웹훅 매니페스트 파일들**
-- `config/webhook/` 디렉터리 생성
-  - `kustomization.yaml` - 웹훅 리소스 관리
-  - `manifests.yaml` - ValidatingWebhookConfiguration, MutatingWebhookConfiguration
-  - `service.yaml` - 웹훅 서비스 정의
-  - `certificate.yaml` - TLS 인증서 설정
-
-**3. 기존 파일 수정**
-- `main.go` - 웹훅 서버 설정 추가
-- `config/manager/manager.yaml` - 웹훅 포트 설정 추가
-
-#### 웹훅 타입별 기능
-
-**Mutating Webhook (`--defaulting`)**
-- 리소스 생성/수정 **전**에 실행
-- 기본값 설정, 라벨/어노테이션 추가
-- 리소스 내용을 **변경**할 수 있음
-
-**Validating Webhook (`--programmatic-validation`)**
-- 리소스 생성/수정 **후**에 실행 (Mutating Webhook 이후)
-- 비즈니스 규칙 검증, 데이터 유효성 검사
-- 리소스 내용을 **변경하지 않고** 승인/거부만 결정
-
-### 2단계: Validating Webhook 구현
+### 1단계: Validating Webhook 구현
 
 생성된 `internal/webhook/v1/website_webhook.go` 파일에 검증 로직을 구현합니다:
 
@@ -340,7 +340,7 @@ func (v *WebsiteCustomValidator) validateWebsite(website *mygroupv1.Website) err
 }
 ```
 
-### 3단계: Mutating Webhook 구현
+### 2단계: Mutating Webhook 구현
 
 **같은 파일**에 Mutating Webhook 로직을 추가합니다:
 
@@ -380,7 +380,7 @@ func (d *WebsiteCustomDefaulter) Default(_ context.Context, obj runtime.Object) 
 }
 ```
 
-### 4단계: 매니페스트 생성 및 배포
+### 3단계: 매니페스트 생성 및 배포
 
 ```bash
 # 매니페스트 생성
@@ -390,7 +390,7 @@ make manifests
 make deploy
 ```
 
-### 5단계: 웹훅 테스트
+### 4단계: 웹훅 테스트
 
 #### 정상적인 Website 생성
 ```bash
