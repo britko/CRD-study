@@ -47,47 +47,29 @@
 
 ```
 CRD-study/
-├── README.md                 # 프로젝트 메인 문서
-├── Makefile                  # 빌드 및 배포 자동화
-├── docs/                     # 학습 문서
-│   ├── 00-overview.md       # 프로젝트 개요 (현재 문서)
-│   ├── 01-basic-concepts.md # CRD 기본 개념
-│   ├── 02-environment-setup.md # 개발 환경 설정
-│   ├── 03-first-crd.md      # 첫 번째 CRD 만들기
-│   ├── 04-kubebuilder-guide.md # kubebuilder 사용법
-│   ├── 05-controller-development.md # 컨트롤러 개발
-│   ├── 06-webhooks.md       # 웹훅 구현
-│   ├── 07-validation-defaulting.md # 검증 및 기본값
-│   └── 08-versioning.md     # CRD 버전 관리
-├── examples/                 # 실습 예제
-│   └── simple-crd/          # 간단한 CRD 예제
-│       ├── website-crd.yaml # Website CRD 정의
-│       └── website-example.yaml # 예제 리소스
-└── projects/                 # 실제 프로젝트 (향후 추가)
-    └── README.md            # 프로젝트 가이드
+├── README.md                           # 프로젝트 메인 문서
+├── Makefile                            # 빌드 및 배포 자동화
+└── docs/                               # 학습 문서
+    ├── 00-overview.md                 # 프로젝트 개요 (현재 문서)
+    ├── 01-basic-concepts.md           # CRD 기본 개념
+    ├── 02-environment-setup.md        # 개발 환경 설정
+    ├── 03-first-crd.md                # 첫 번째 CRD 만들기
+    ├── 04-kubebuilder-guide.md        # kubebuilder 사용법 (프로젝트 생성)
+    ├── 05-controller-development.md   # 컨트롤러 개발
+    ├── 06-webhooks.md                 # 웹훅 구현
+    ├── 06a-performance-optimization.md # 웹훅 성능 최적화
+    ├── 07-validation-defaulting.md    # 검증 및 기본값
+    ├── 08-versioning.md               # CRD 버전 관리
+    └── 09-database-operator-project.md # 실무 프로젝트 (Database Operator)
 ```
 
-## 🚀 시작하기
+### 📝 참고사항
 
-### 1. 환경 확인
-```bash
-make setup
-```
+- **04단계에서 프로젝트 생성**: `04-kubebuilder-guide.md`에서 `advanced-crd-project` 디렉토리를 생성합니다
+- **실습 중심**: 각 단계별로 실제 프로젝트를 만들면서 학습합니다
+- **점진적 학습**: 간단한 CRD부터 시작해서 점점 복잡한 기능을 추가합니다
 
-### 2. 첫 번째 CRD 배포
-```bash
-make deploy
-```
 
-### 3. 상태 확인
-```bash
-make status
-```
-
-### 4. 정리
-```bash
-make clean
-```
 
 ## 📖 학습 자료
 
@@ -119,8 +101,50 @@ make clean
 
 모든 기여를 환영합니다!
 
-## 📝 다음 단계
+## 📝 학습 순서
 
+### 🥇 기초 단계
 - [CRD 기본 개념](./01-basic-concepts.md) - CRD의 기본 개념부터 시작
 - [개발 환경 설정](./02-environment-setup.md) - 개발 환경 구축
 - [첫 번째 CRD 만들기](./03-first-crd.md) - 실제 CRD 개발 실습
+
+### 🥈 실습 단계
+- [kubebuilder 가이드](./04-kubebuilder-guide.md) - kubebuilder 프레임워크 활용
+- [컨트롤러 개발](./05-controller-development.md) - Website Controller 구현
+- [웹훅 구현](./06-webhooks.md) - Mutating/Validating Webhook 개발
+- [웹훅 성능 최적화](./06a-performance-optimization.md) - 고급 웹훅 최적화 기법
+
+### 🥉 고급 단계
+- [검증 및 기본값](./07-validation-defaulting.md) - OpenAPI 스키마 검증
+- [CRD 버전 관리](./08-versioning.md) - API 버전 관리 전략
+- [Database Operator 프로젝트](./09-database-operator-project.md) - 실무 프로젝트 (요구사항 기반 학습)
+
+## 🎯 실습 프로젝트
+
+이 프로젝트에서는 **Website CRD**를 중심으로 학습합니다:
+
+### 📚 학습 단계별 프로젝트
+- **01-03단계**: 기본 개념 이해 및 간단한 CRD 실습
+- **04단계**: `advanced-crd-project` 생성 (kubebuilder 프로젝트)
+- **05-08단계**: Website CRD 개발 (Controller, Webhook, 검증 등)
+- **09단계**: Database Operator 프로젝트 (실무 프로젝트)
+
+### 🏗️ 04단계 이후 프로젝트 구조
+```
+advanced-crd-project/              # 04단계에서 생성
+├── api/v1/                        # CRD API 정의
+│   ├── website_types.go           # Website CRD 스키마
+│   └── zz_generated.deepcopy.go   # 자동 생성 코드
+├── internal/                      # 내부 구현
+│   ├── controller/                # Website Controller
+│   └── webhook/                   # Mutating/Validating Webhooks
+├── config/                        # 배포 설정
+│   ├── crd/                       # CRD 매니페스트
+│   ├── rbac/                      # RBAC 설정
+│   ├── webhook/                   # Webhook 설정
+│   └── samples/                   # 예제 리소스
+├── test/                          # 테스트 코드
+│   ├── e2e/                       # E2E 테스트
+│   └── utils/                     # 테스트 유틸리티
+└── cmd/main.go                    # 메인 애플리케이션
+```
