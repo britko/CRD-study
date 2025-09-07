@@ -356,9 +356,7 @@ func (pm *PerformanceMetrics) GetMetrics() map[string]interface{} {
 
 ### 6-1. 구현 체크리스트
 
-```bash
-# 성능 최적화 구현 체크리스트
-cat << 'EOF'
+```
 === 웹훅 성능 최적화 체크리스트 ===
 
 ✅ 필터링 최적화:
@@ -385,7 +383,6 @@ cat << 'EOF'
   - 성능 메트릭 수집 구현
   - Prometheus 연동 구현
   - 자동 성능 튜닝 구현
-EOF
 ```
 
 ### 6-2. 성능 벤치마크
