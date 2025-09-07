@@ -18,9 +18,146 @@
 - 일관된 리소스 구성 보장
 - 사용자 편의성 향상
 
-## OpenAPI 스키마 검증
+## kubebuilder 마커를 사용한 검증
+
+> **📝 실습 시작**: 아래는 실제로 수정할 `api/v1/website_types.go` 파일의 코드입니다. kubebuilder 마커를 추가하면 자동으로 OpenAPI 스키마가 생성됩니다.
+
+### 1. 기본 검증 마커
+
+```go
+type WebsiteSpec struct {
+    // URL은 웹사이트의 URL입니다
+    // +kubebuilder:validation:Required
+    // +kubebuilder:validation:Pattern=`^https?://`
+    // +kubebuilder:validation:MinLength=10
+    // +kubebuilder:validation:MaxLength=2048
+    URL string `json:"url"`
+    
+    // Replicas는 배포할 복제본 수입니다
+    // +kubebuilder:validation:Minimum=1
+    // +kubebuilder:validation:Maximum=100
+    // +kubebuilder:default=3
+    Replicas int32 `json:"replicas"`
+    
+    // Image는 사용할 Docker 이미지입니다
+    // +kubebuilder:default="nginx:latest"
+    Image string `json:"image,omitempty"`
+    
+    // Port는 컨테이너 포트입니다
+    // +kubebuilder:validation:Minimum=1
+    // +kubebuilder:validation:Maximum=65535
+    // +kubebuilder:default=80
+    Port int32 `json:"port,omitempty"`
+    
+    // Environment는 배포 환경입니다
+    // +kubebuilder:validation:Enum=development;staging;production
+    // +kubebuilder:default=development
+    Environment string `json:"environment,omitempty"`
+}
+```
+
+### 2. 고급 검증 마커
+
+```go
+type WebsiteSpec struct {
+    // Resources는 리소스 요구사항입니다
+    // +kubebuilder:validation:Optional
+    Resources *ResourceRequirements `json:"resources,omitempty"`
+    
+    // Config는 웹사이트 설정입니다
+    // +kubebuilder:validation:Optional
+    Config *WebsiteConfig `json:"config,omitempty"`
+    
+    // SSL은 SSL 설정입니다
+    // +kubebuilder:validation:Optional
+    SSL *SSLConfig `json:"ssl,omitempty"`
+}
+
+type ResourceRequirements struct {
+    // Requests는 최소 리소스 요구사항입니다
+    // +kubebuilder:validation:Required
+    Requests ResourceList `json:"requests"`
+    
+    // Limits는 최대 리소스 제한입니다
+    // +kubebuilder:validation:Optional
+    Limits ResourceList `json:"limits,omitempty"`
+}
+
+type ResourceList struct {
+    // CPU는 CPU 요구사항입니다
+    // +kubebuilder:validation:Pattern=`^[0-9]+m?$`
+    // +kubebuilder:validation:MinLength=2
+    CPU string `json:"cpu"`
+    
+    // Memory는 메모리 요구사항입니다
+    // +kubebuilder:validation:Pattern=`^[0-9]+[KMGTPEZYkmgtpezy]i?$`
+    // +kubebuilder:validation:MinLength=2
+    Memory string `json:"memory"`
+}
+
+type WebsiteConfig struct {
+    // Nginx는 Nginx 설정입니다
+    // +kubebuilder:validation:Optional
+    Nginx *NginxConfig `json:"nginx,omitempty"`
+    
+    // Redis는 Redis 설정입니다
+    // +kubebuilder:validation:Optional
+    Redis *RedisConfig `json:"redis,omitempty"`
+}
+
+type NginxConfig struct {
+    // WorkerProcesses는 워커 프로세스 수입니다
+    // +kubebuilder:validation:Minimum=1
+    // +kubebuilder:validation:Maximum=16
+    // +kubebuilder:default=4
+    WorkerProcesses int32 `json:"workerProcesses,omitempty"`
+    
+    // WorkerConnections는 워커 연결 수입니다
+    // +kubebuilder:validation:Minimum=1
+    // +kubebuilder:validation:Maximum=65535
+    // +kubebuilder:default=1024
+    WorkerConnections int32 `json:"workerConnections,omitempty"`
+}
+
+type RedisConfig struct {
+    // Enabled는 Redis 활성화 여부입니다
+    // +kubebuilder:default=false
+    Enabled bool `json:"enabled"`
+    
+    // Host는 Redis 호스트입니다
+    // +kubebuilder:validation:Optional
+    // +kubebuilder:validation:Format=hostname
+    Host string `json:"host,omitempty"`
+    
+    // Port는 Redis 포트입니다
+    // +kubebuilder:validation:Minimum=1
+    // +kubebuilder:validation:Maximum=65535
+    // +kubebuilder:default=6379
+    Port int32 `json:"port,omitempty"`
+}
+
+type SSLConfig struct {
+    // Enabled는 SSL 활성화 여부입니다
+    // +kubebuilder:default=false
+    Enabled bool `json:"enabled"`
+    
+    // Certificate는 SSL 인증서 경로입니다
+    // +kubebuilder:validation:Optional
+    Certificate string `json:"certificate,omitempty"`
+    
+    // PrivateKey는 SSL 개인키 경로입니다
+    // +kubebuilder:validation:Optional
+    PrivateKey string `json:"privateKey,omitempty"`
+}
+```
+
+## OpenAPI 스키마 검증 (자동 생성 결과)
+
+> **📝 참고**: 아래 YAML은 위의 kubebuilder 마커에서 `make manifests` 명령으로 **자동 생성되는 결과물**입니다. 직접 작성하지 않습니다.
 
 ### 1. 기본 타입 검증
+
+**자동 생성되는 CRD의 OpenAPI 스키마**:
 
 ```yaml
 apiVersion: apiextensions.k8s.io/v1
@@ -193,120 +330,6 @@ spec:
                       then:
                         not:
                           required: ["certificate", "privateKey"]
-```
-
-## kubebuilder 마커를 사용한 검증
-
-### 1. 기본 검증 마커
-
-```go
-type WebsiteSpec struct {
-    // URL은 웹사이트의 URL입니다
-    // +kubebuilder:validation:Required
-    // +kubebuilder:validation:Pattern=`^https?://`
-    // +kubebuilder:validation:MinLength=10
-    // +kubebuilder:validation:MaxLength=2048
-    URL string `json:"url"`
-    
-    // Replicas는 배포할 복제본 수입니다
-    // +kubebuilder:validation:Minimum=1
-    // +kubebuilder:validation:Maximum=100
-    // +kubebuilder:default=3
-    Replicas int32 `json:"replicas"`
-    
-    // Image는 사용할 Docker 이미지입니다
-    // +kubebuilder:default="nginx:latest"
-    Image string `json:"image,omitempty"`
-    
-    // Port는 컨테이너 포트입니다
-    // +kubebuilder:validation:Minimum=1
-    // +kubebuilder:validation:Maximum=65535
-    // +kubebuilder:default=80
-    Port int32 `json:"port,omitempty"`
-    
-    // Environment는 배포 환경입니다
-    // +kubebuilder:validation:Enum=development;staging;production
-    // +kubebuilder:default=development
-    Environment string `json:"environment,omitempty"`
-}
-```
-
-### 2. 고급 검증 마커
-
-```go
-type WebsiteSpec struct {
-    // Resources는 리소스 요구사항입니다
-    // +kubebuilder:validation:Optional
-    Resources *ResourceRequirements `json:"resources,omitempty"`
-    
-    // Config는 웹사이트 설정입니다
-    // +kubebuilder:validation:Optional
-    Config *WebsiteConfig `json:"config,omitempty"`
-    
-    // SSL은 SSL 설정입니다
-    // +kubebuilder:validation:Optional
-    SSL *SSLConfig `json:"ssl,omitempty"`
-}
-
-type ResourceRequirements struct {
-    // Requests는 최소 리소스 요구사항입니다
-    // +kubebuilder:validation:Required
-    Requests ResourceList `json:"requests"`
-    
-    // Limits는 최대 리소스 제한입니다
-    // +kubebuilder:validation:Optional
-    Limits ResourceList `json:"limits,omitempty"`
-}
-
-type ResourceList struct {
-    // CPU는 CPU 요구사항입니다
-    // +kubebuilder:validation:Pattern=`^[0-9]+m?$`
-    // +kubebuilder:validation:MinLength=2
-    CPU string `json:"cpu"`
-    
-    // Memory는 메모리 요구사항입니다
-    // +kubebuilder:validation:Pattern=`^[0-9]+[KMGTPEZYkmgtpezy]i?$`
-    // +kubebuilder:validation:MinLength=2
-    Memory string `json:"memory"`
-}
-
-type WebsiteConfig struct {
-    // Nginx는 Nginx 설정입니다
-    // +kubebuilder:validation:Optional
-    Nginx *NginxConfig `json:"nginx,omitempty"`
-    
-    // Redis는 Redis 설정입니다
-    // +kubebuilder:validation:Optional
-    Redis *RedisConfig `json:"redis,omitempty"`
-}
-
-type NginxConfig struct {
-    // WorkerProcesses는 워커 프로세스 수입니다
-    // +kubebuilder:validation:Minimum=1
-    // +kubebuilder:validation:Maximum=16
-    // +kubebuilder:default=4
-    WorkerProcesses int32 `json:"workerProcesses,omitempty"`
-    
-    // WorkerConnections는 워커 연결 수입니다
-    // +kubebuilder:validation:Minimum=1
-    // +kubebuilder:validation:Maximum=65535
-    // +kubebuilder:default=1024
-    WorkerConnections int32 `json:"workerConnections,omitempty"`
-}
-
-type SSLConfig struct {
-    // Enabled는 SSL 활성화 여부입니다
-    // +kubebuilder:default=false
-    Enabled bool `json:"enabled"`
-    
-    // Certificate는 SSL 인증서 경로입니다
-    // +kubebuilder:validation:Optional
-    Certificate string `json:"certificate,omitempty"`
-    
-    // PrivateKey는 SSL 개인키 경로입니다
-    // +kubebuilder:validation:Optional
-    PrivateKey string `json:"privateKey,omitempty"`
-}
 ```
 
 ## 프로그래밍 방식 검증
@@ -817,7 +840,9 @@ func TestWebsite_Default(t *testing.T) {
 
 ### 1단계: 기존 Website CRD에 스키마 검증 추가
 
-`api/v1/website_types.go` 파일을 수정하여 kubebuilder 마커로 검증 규칙을 추가합니다:
+> **📝 실습 시작**: `api/v1/website_types.go` 파일을 수정하여 kubebuilder 마커로 검증 규칙을 추가합니다.
+
+**수정할 파일**: `advanced-crd-project/api/v1/website_types.go`
 
 ```go
 // api/v1/website_types.go
@@ -864,11 +889,13 @@ type WebsiteSpec struct {
 
 ### 2단계: 매니페스트 생성 및 배포
 
+> **📝 중요**: kubebuilder 마커를 추가한 후에는 반드시 매니페스트를 재생성해야 합니다.
+
 ```bash
 # advanced-crd-project 디렉터리로 이동
 cd advanced-crd-project
 
-# 매니페스트 생성
+# 매니페스트 생성 (kubebuilder 마커 → OpenAPI 스키마 변환)
 make manifests
 
 # CRD 업데이트
@@ -977,10 +1004,14 @@ kubectl get website default-values-website -o yaml
 
 ### 5단계: CRD 스키마 확인
 
+> **📝 확인**: kubebuilder 마커가 실제로 OpenAPI 스키마로 변환되었는지 확인합니다.
+
 ```bash
 # 생성된 CRD의 OpenAPI 스키마 확인
 kubectl get crd websites.mygroup.example.com -o yaml | grep -A 50 "openAPIV3Schema"
 ```
+
+**예상 결과**: 위에서 본 YAML과 동일한 스키마가 생성되어야 합니다.
 
 ### 6단계: 검증과 웹훅의 차이점 확인
 
